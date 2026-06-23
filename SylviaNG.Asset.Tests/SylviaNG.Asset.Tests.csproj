@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SylviaNG.Asset\SylviaNG.Assets.csproj" />
+    <ProjectReference Include="..\SylviaNG.Asset\SylviaNG.Asset.csproj" />
   </ItemGroup>
 
 </Project>
