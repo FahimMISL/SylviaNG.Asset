@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package core;
+
+option csharp_namespace = "SylviaNG.Assets.Grpc.Generated.Core";
+
+// ==================== Request Messages ====================
+
+// Request to batch lookup master data by IDs
+message BatchLookupRequest {
+  repeated int64 department_ids = 1;
+  repeated int64 designation_ids = 2;
+  repeated int64 grade_ids = 3;
+  repeated int64 employee_type_ids = 4;
+  repeated int64 site_ids = 5;
+}
+
+// ==================== Response Messages ====================
+
+// Master data item with ID, name and code
+message MasterDataItem {
+  int64 id = 1;
+  string name = 2;
+  string code = 3;
+  bool is_active = 4;
+}
+
+// Batch lookup response with all master data
+message BatchLookupResponse {
+  repeated MasterDataItem departments = 1;
+  repeated MasterDataItem designations = 2;
+  repeated MasterDataItem grades = 3;
+  repeated MasterDataItem employee_types = 4;
+  repeated MasterDataItem sites = 5;
+  string message = 6;
+}
+
+// ==================== Service Definition ====================
+
+service CoreService {
+  // Batch lookup master data by IDs
+  rpc BatchLookup (BatchLookupRequest) returns (BatchLookupResponse);
+}

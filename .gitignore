@@ -1,0 +1,80 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Rider project files
+.idea/
+
+# VS Code settings
+.vscode/
+
+.vs/
+
+# Visual Studio settings
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ASP.NET Core environment files
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userprefs
+*.ncrunch*
+*.localhistory
+*.sln.docstates
+
+# Logs
+logs/
+*.log
+
+# Test results
+TestResults/
+**/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# NCrunch
+*.ncrunchproject
+*.ncrunchsolution
+_nCrunch_*
+.*crunch*.local.xml
+
+# Docker
+docker-compose.override.yml
+**/docker-compose.*.yml
+docker/*.tar
+docker/*.img
+
+# Kubernetes (Optional overrides/configs)
+k8s/*.local.yaml
+k8s/secret.*
+
+# EF Core Migrations Snapshots
+**/Migrations/*Snapshot.cs
+
+# Generated files
+Generated_Code/
+
+# Paket dependency manager
+.paket/
+paket-files/
+
+# Others
+*.DS_Store
+*.swp
+*.bak
+*.tmp
+
+# Node modules (if JS is used)
+node_modules/
+
+# Visual Studio language service cache
+*.lscache
