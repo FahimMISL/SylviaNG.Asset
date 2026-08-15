@@ -1,6 +1,10 @@
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Finbuckle.MultiTenant.Extensions;
 using Microsoft.EntityFrameworkCore;
+using RMS.Application.Interfaces;
+using RMS.Infrastructure.Data;
+using RMS.Infrastructure.Repositories;
+using RMS.Infrastructure.Services;
 using SylviaNG.Assets.Application.Interfaces.Repositories;
 using SylviaNG.Assets.Infrastructure.Data;
 using SylviaNG.Assets.Infrastructure.Interceptors;
@@ -66,12 +70,42 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
                 options.AddInterceptors(sp.GetRequiredService<UtcDateTimeInterceptor>());
             });
 
+            // Requisition module (Feature 1/2) uses its own bounded-context DbContext,
+            // same physical database, same provider switch as ApplicationDBContext above.
+            services.AddDbContext<RmsDbContext>((sp, options) =>
+            {
+                var provider = NormalizeDatabaseProvider(databaseProvider);
+
+                switch (provider)
+                {
+                    case "postgresql":
+                        options.UseNpgsql(connectionString);
+                        break;
+                    case "sqlserver":
+                        options.UseSqlServer(connectionString);
+                        break;
+                    case "oracle":
+                        options.UseOracle(connectionString);
+                        break;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unsupported database provider: {databaseProvider}. Supported providers: PostgreSQL, SqlServer, Oracle.");
+                }
+
+                options.AddInterceptors(sp.GetRequiredService<UtcDateTimeInterceptor>());
+            });
+
             // Register your repositories here
             // Adding DI of repositories
             services.AddScoped<IAssetRepository, AssetRepository>();
+            services.AddScoped<IRequisitionRepository, RequisitionRepository>();
+            services.AddScoped<ICategoryRepository, CategoryRepository>();
+            services.AddScoped<ICostCenterRepository, CostCenterRepository>();
+            services.AddScoped<IRequisitionExistenceChecker, RequisitionExistenceChecker>();
 
             // Register Unit of Work
-            services.AddScoped<IUnitOfWork, UnitOfWork>();
+            services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();
+            services.AddScoped<RMS.Application.Interfaces.IUnitOfWork>(sp => sp.GetRequiredService<RmsDbContext>());
 
             // Kafka
             services.Configure<KafkaSettings>(configuration.GetSection("Kafka"));
