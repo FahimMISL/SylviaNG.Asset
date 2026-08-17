@@ -20,6 +20,8 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.Category)
             .Include(r => r.CostCenter)
             .Include(r => r.FieldValues).ThenInclude(v => v.FieldDefinition)
+            .Include(r => r.StatusHistory.OrderBy(h => h.CreatedAtUtc))
+            .Include(r => r.Attachments.OrderByDescending(a => a.CreatedAtUtc))
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default) =>
@@ -35,6 +37,28 @@ public class RequisitionRepository : IRequisitionRepository
 
     public Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default) =>
         _context.RequisitionFieldValues.AnyAsync(v => v.FieldDefinition!.CategoryId == categoryId, cancellationToken);
+
+    public Task<int> CountNumberedInYearAsync(int year, CancellationToken cancellationToken = default)
+    {
+        var prefix = $"REQ-{year}-";
+        return _context.Requisitions.CountAsync(r => r.RequisitionNumber != null && r.RequisitionNumber.StartsWith(prefix), cancellationToken);
+    }
+
+    public Task<Requisition?> FindPotentialDuplicateAsync(
+        Guid userId, Guid categoryId, DateTime needByDate, int totalQuantity, DateTime sinceUtc, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Where(r => r.RequestedByUserId == userId
+                && r.CategoryId == categoryId
+                && r.NeedByDate.Date == needByDate.Date
+                && r.CreatedAtUtc >= sinceUtc
+                // "You may have already SUBMITTED a similar request" only makes sense against
+                // something that was actually submitted - matching a Draft (which has no
+                // RequisitionNumber yet) showed "(null)" in the warning message.
+                && r.Status != Domain.Enums.RequisitionStatus.Draft
+                && r.Status != Domain.Enums.RequisitionStatus.Cancelled)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(r => r.Items.Sum(i => i.Quantity) == totalQuantity, cancellationToken);
 
     public void Add(Requisition requisition) => _context.Requisitions.Add(requisition);
 
@@ -52,6 +76,21 @@ public class RequisitionRepository : IRequisitionRepository
         // tracks these as new inserts instead of mis-detecting them as updates -
         // see CategoryRepository.ReplaceFieldDefinitions for the same fix.
         _context.RequisitionItems.AddRange(newItems);
+    }
+
+    public void AddStatusHistory(RequisitionStatusHistory entry) => _context.RequisitionStatusHistories.Add(entry);
+
+    public void AddAttachment(Requisition requisition, RequisitionAttachment attachment)
+    {
+        attachment.RequisitionId = requisition.Id;
+        requisition.Attachments.Add(attachment);
+        _context.RequisitionAttachments.Add(attachment);
+    }
+
+    public void RemoveAttachment(Requisition requisition, RequisitionAttachment attachment)
+    {
+        requisition.Attachments.Remove(attachment);
+        _context.RequisitionAttachments.Remove(attachment);
     }
 
     public void ReplaceFieldValues(Requisition requisition, List<RequisitionFieldValue> newValues)

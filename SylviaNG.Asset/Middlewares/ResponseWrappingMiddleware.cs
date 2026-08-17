@@ -49,6 +49,20 @@ namespace SylviaNG.Assets.Middlewares
                     return;
                 }
 
+                // Binary/file responses (e.g. RequisitionsController's attachment download, via
+                // return File(...)) must pass through untouched - reading them as text via
+                // StreamReader below corrupts the bytes, and re-wrapping would break the download
+                // entirely. Every JSON action result in this app sets "application/json" (see
+                // AddJsonOptions in Program.cs), so anything else here is a deliberate raw response.
+                var contentType = context.Response.ContentType;
+                if (!string.IsNullOrEmpty(contentType) && !contentType.Contains("application/json", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.Body = originalBodyStream;
+                    responseBody.Seek(0, SeekOrigin.Begin);
+                    await responseBody.CopyToAsync(originalBodyStream);
+                    return;
+                }
+
                 responseBody.Seek(0, SeekOrigin.Begin);
                 var bodyText = await new StreamReader(context.Response.Body).ReadToEndAsync();
                 context.Response.Body.Seek(0, SeekOrigin.Begin);

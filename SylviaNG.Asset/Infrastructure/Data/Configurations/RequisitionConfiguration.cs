@@ -11,6 +11,22 @@ public class RequisitionConfiguration : IEntityTypeConfiguration<Requisition>
         builder.ToTable("Requisitions");
         builder.HasKey(r => r.Id);
         builder.Property(r => r.Justification).HasMaxLength(2000);
+        builder.Property(r => r.UrgencyJustification).HasMaxLength(2000);
+        builder.Property(r => r.EstimatedCost).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.RequisitionNumber).HasMaxLength(20);
+        // Filtered so multiple Drafts (RequisitionNumber still null) don't collide under providers
+        // that treat NULL as a value in unique indexes.
+        builder.HasIndex(r => r.RequisitionNumber).IsUnique().HasFilter("\"RequisitionNumber\" IS NOT NULL");
+
+        builder.HasMany(r => r.StatusHistory)
+            .WithOne(h => h.Requisition!)
+            .HasForeignKey(h => h.RequisitionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(r => r.Attachments)
+            .WithOne(a => a.Requisition!)
+            .HasForeignKey(a => a.RequisitionId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(r => r.Company)
             .WithMany()

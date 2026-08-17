@@ -1,0 +1,102 @@
+using MediatR;
+using SylviaNG.Assets.Application.Common.Exceptions;
+using RMS.Application.Features.Requisitions;
+using RMS.Application.Features.Requisitions.DTOs;
+using RMS.Application.Interfaces;
+using RMS.Domain.Entities;
+
+namespace RMS.Application.Features.Requisitions.Commands.CreateRequisition;
+
+public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisitionCommand, RequisitionDto>
+{
+    private readonly IRequisitionRepository _requisitionRepository;
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IAuditLogger _auditLogger;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public CreateRequisitionCommandHandler(
+        IRequisitionRepository requisitionRepository,
+        ICategoryRepository categoryRepository,
+        ICurrentUserService currentUser,
+        IAuditLogger auditLogger,
+        IUnitOfWork unitOfWork)
+    {
+        _requisitionRepository = requisitionRepository;
+        _categoryRepository = categoryRepository;
+        _currentUser = currentUser;
+        _auditLogger = auditLogger;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<RequisitionDto> Handle(CreateRequisitionCommand request, CancellationToken cancellationToken)
+    {
+        var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
+        var userId = _currentUser.UserId ?? throw new ForbiddenException();
+        var actorName = _currentUser.FullName ?? "Unknown";
+        var actorRole = _currentUser.Role?.ToString();
+
+        var category = await _categoryRepository.GetByIdAsync(request.CategoryId, cancellationToken)
+            ?? throw new NotFoundException(nameof(RequisitionCategory), request.CategoryId);
+
+        if (!category.IsActive)
+        {
+            throw new ConflictException("This category is not currently active and cannot be used for a new requisition.");
+        }
+
+        RequisitionFieldValidation.EnsureValid(category, request.FieldValues, request.CostCenterId, request.ProjectCode, request.Submit);
+
+        var requisition = new Requisition
+        {
+            CompanyId = companyId,
+            CategoryId = request.CategoryId,
+            CategoryVersionNumber = category.CurrentVersionNumber,
+            RequestedByUserId = userId,
+            Priority = request.Priority,
+            NeedByDate = request.NeedByDate,
+            EstimatedCost = request.EstimatedCost,
+            Justification = request.Justification,
+            UrgencyJustification = request.UrgencyJustification,
+            CostCenterId = request.CostCenterId,
+            ProjectCode = request.ProjectCode,
+            CreatedByUserId = userId,
+            CreatedAtUtc = DateTime.UtcNow,
+        };
+        var draftEntry = new RequisitionStatusHistory
+        {
+            RequisitionId = requisition.Id,
+            FromStatus = null,
+            ToStatus = Domain.Enums.RequisitionStatus.Draft,
+            ActorUserId = userId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+        };
+        requisition.StatusHistory.Add(draftEntry);
+
+        var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
+
+        _requisitionRepository.Add(requisition);
+        _requisitionRepository.AddStatusHistory(draftEntry);
+        _requisitionRepository.ReplaceItems(requisition, resolvedItems);
+        _requisitionRepository.ReplaceFieldValues(requisition, request.FieldValues
+            .Select(v => new RequisitionFieldValue { FieldDefinitionId = v.FieldDefinitionId, Value = v.Value })
+            .ToList());
+
+        if (request.Submit)
+        {
+            var year = DateTime.UtcNow.Year;
+            var sequence = await _requisitionRepository.CountNumberedInYearAsync(year, cancellationToken) + 1;
+            var submitEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);
+            _requisitionRepository.AddStatusHistory(submitEntry);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogger.LogAsync(
+            request.Submit ? "RequisitionSubmitted" : "RequisitionDraftSaved",
+            nameof(Requisition), requisition.Id, $"CategoryId={requisition.CategoryId}", cancellationToken);
+
+        var saved = await _requisitionRepository.GetByIdAsync(requisition.Id, cancellationToken) ?? requisition;
+        return RequisitionDto.FromEntity(saved);
+    }
+}
