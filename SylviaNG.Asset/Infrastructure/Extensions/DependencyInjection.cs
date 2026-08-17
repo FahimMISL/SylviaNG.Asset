@@ -102,6 +102,8 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<ICategoryRepository, CategoryRepository>();
             services.AddScoped<ICostCenterRepository, CostCenterRepository>();
             services.AddScoped<IRequisitionExistenceChecker, RequisitionExistenceChecker>();
+            services.AddScoped<ICurrentUserService, CurrentUserService>();
+            services.AddScoped<IAuditLogger, AuditLogger>();
 
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();

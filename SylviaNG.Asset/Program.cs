@@ -97,6 +97,12 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    // DEV-ONLY: see RmsDevelopmentSeeder / CurrentUserService.FallbackDevUser - real login
+    // isn't wired yet, so this seeds the identity Feature 1/2 writes get attributed to.
+    using var scope = app.Services.CreateScope();
+    var rmsDb = scope.ServiceProvider.GetRequiredService<RMS.Infrastructure.Data.RmsDbContext>();
+    await RMS.Infrastructure.Data.RmsDevelopmentSeeder.SeedAsync(rmsDb);
 }
 
 app.UseCors("AllowAll");
