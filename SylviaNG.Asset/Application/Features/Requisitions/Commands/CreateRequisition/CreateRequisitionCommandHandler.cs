@@ -1,5 +1,6 @@
 using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
+using RMS.Application.Features.ApprovalWorkflows.Services;
 using RMS.Application.Features.Requisitions;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Interfaces;
@@ -14,19 +15,22 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
 
     public CreateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
         ICategoryRepository categoryRepository,
         ICurrentUserService currentUser,
         IAuditLogger auditLogger,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ApprovalWorkflowEngine approvalWorkflowEngine)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
+        _approvalWorkflowEngine = approvalWorkflowEngine;
     }
 
     public async Task<RequisitionDto> Handle(CreateRequisitionCommand request, CancellationToken cancellationToken)
@@ -88,6 +92,11 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             var sequence = await _requisitionRepository.CountNumberedInYearAsync(year, cancellationToken) + 1;
             var submitEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);
             _requisitionRepository.AddStatusHistory(submitEntry);
+
+            // Feature 3: resolves the active workflow for this company/category, creates the approval
+            // process, and transitions Submitted -> UnderReview (or straight to Approved if every stage
+            // is skipped) - see ApprovalWorkflowEngine.ResolveAndStart.
+            await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -1,3 +1,4 @@
+using RMS.Application.Features.Approvals.DTOs;
 using RMS.Domain.Entities;
 
 namespace RMS.Application.Features.Requisitions.DTOs;
@@ -32,6 +33,9 @@ public record RequisitionAttachmentDto(
 public record RequisitionDto(
     Guid Id,
     string? RequisitionNumber,
+    /// <summary>Lets the frontend determine whether the current viewer IS the requestor, without
+    /// inferring it - needed to gate requestor-only actions like Respond to Clarification.</summary>
+    Guid RequestedByUserId,
     Guid CategoryId,
     string CategoryName,
     int CategoryVersionNumber,
@@ -50,11 +54,21 @@ public record RequisitionDto(
     List<RequisitionItemDto> Items,
     List<RequisitionFieldValueDto> FieldValues,
     List<RequisitionStatusHistoryDto> Timeline,
-    List<RequisitionAttachmentDto> Attachments)
+    List<RequisitionAttachmentDto> Attachments,
+    /// <summary>Feature 3: resolved workflow version, stages with status/approvers/SLA state, and the
+    /// action history - null while the requisition hasn't been submitted into a workflow yet. Read-only:
+    /// approvers still cannot edit requisition fields through this DTO. Its CurrentUserCanAct flag is
+    /// the one authoritative, delegation-aware "should I show approve/reject/etc. buttons" signal -
+    /// see ApprovalProcessDto's remarks.</summary>
+    ApprovalProcessDto? ApprovalProcess)
 {
-    public static RequisitionDto FromEntity(Requisition r) => new(
+    /// <summary>currentUserCanAct defaults false for call sites that don't need it (e.g. the requestor's
+    /// own view of a requisition they just created/listed) - GetRequisitionByIdQueryHandler is the one
+    /// place that computes it properly via ApprovalAuthorizationHelper.IsCurrentUserActionableAsync.</summary>
+    public static RequisitionDto FromEntity(Requisition r, bool currentUserCanAct = false) => new(
         r.Id,
         r.RequisitionNumber,
+        r.RequestedByUserId,
         r.CategoryId,
         r.Category?.Name ?? string.Empty,
         r.CategoryVersionNumber,
@@ -73,7 +87,8 @@ public record RequisitionDto(
         r.Items.Select(RequisitionItemDto.FromEntity).ToList(),
         r.FieldValues.Select(RequisitionFieldValueDto.FromEntity).ToList(),
         r.StatusHistory.Select(RequisitionStatusHistoryDto.FromEntity).ToList(),
-        r.Attachments.Select(RequisitionAttachmentDto.FromEntity).ToList());
+        r.Attachments.Select(RequisitionAttachmentDto.FromEntity).ToList(),
+        r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct));
 }
 
 public record RequisitionSummaryDto(

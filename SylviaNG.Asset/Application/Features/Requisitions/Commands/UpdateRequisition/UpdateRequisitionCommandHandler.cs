@@ -1,5 +1,6 @@
 using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
+using RMS.Application.Features.ApprovalWorkflows.Services;
 using RMS.Application.Features.Requisitions;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Interfaces;
@@ -15,19 +16,22 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
 
     public UpdateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
         ICategoryRepository categoryRepository,
         ICurrentUserService currentUser,
         IAuditLogger auditLogger,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ApprovalWorkflowEngine approvalWorkflowEngine)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
+        _approvalWorkflowEngine = approvalWorkflowEngine;
     }
 
     public async Task<RequisitionDto> Handle(UpdateRequisitionCommand request, CancellationToken cancellationToken)
@@ -101,6 +105,19 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             // requisition was loaded (already tracked), so the new StatusHistory entry needs to be
             // registered explicitly - see Requisition.Submit's remarks.
             _requisitionRepository.AddStatusHistory(transitionEntry);
+
+            // Feature 3: this is the "Save Draft, then Submit later" / SentBack-resubmit path -
+            // CreateRequisitionCommandHandler only covers a requisition submitted immediately. Without
+            // this call the requisition would sit at Submitted forever with no ApprovalProcess and never
+            // reach any approver's inbox.
+            if (isAmendment)
+            {
+                await _approvalWorkflowEngine.ResumeAfterSendBackAsync(requisition, userId, actorName, actorRole, cancellationToken);
+            }
+            else
+            {
+                await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -33,6 +33,12 @@ public class CurrentUserService : ICurrentUserService
     /// to the seeded demo identity (RmsDevelopmentSeeder) - but only in Development, so this
     /// can never silently activate anywhere real auth is actually expected to be enforced.
     /// Remove this fallback once login is wired end-to-end.
+    ///
+    /// Honors an optional "X-Dev-User-Id" header (also Development-only, unauthenticated-only)
+    /// so Feature 3 testing can simulate acting as different seeded demo users - see the
+    /// frontend's "Acting as" selector in header.component.ts, which is the only thing that
+    /// sends this header. Falls back to the seeded SystemAdmin when absent/invalid, same as
+    /// before this existed.
     /// </summary>
     private User? FallbackDevUser
     {
@@ -42,7 +48,12 @@ public class CurrentUserService : ICurrentUserService
             _fallbackLoaded = true;
             if (_environment.IsDevelopment())
             {
-                _fallbackDevUser = _context.Users.AsNoTracking().FirstOrDefault(u => u.Role == UserRole.SystemAdmin);
+                var devUserIdHeader = _httpContextAccessor.HttpContext?.Request.Headers["X-Dev-User-Id"].FirstOrDefault();
+                if (Guid.TryParse(devUserIdHeader, out var devUserId))
+                {
+                    _fallbackDevUser = _context.Users.AsNoTracking().FirstOrDefault(u => u.Id == devUserId);
+                }
+                _fallbackDevUser ??= _context.Users.AsNoTracking().FirstOrDefault(u => u.Role == UserRole.SystemAdmin);
             }
             return _fallbackDevUser;
         }

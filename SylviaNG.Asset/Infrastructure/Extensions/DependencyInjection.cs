@@ -106,6 +106,14 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<IAuditLogger, AuditLogger>();
             services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+            // Feature 3 - Approval Workflow Management
+            services.AddScoped<IApprovalWorkflowRepository, ApprovalWorkflowRepository>();
+            services.AddScoped<IRequisitionApprovalRepository, RequisitionApprovalRepository>();
+            services.AddScoped<IApprovalDelegationRepository, ApprovalDelegationRepository>();
+            services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<INotificationService, NoOpNotificationService>();
+            services.AddHostedService<SlaBreachEscalationService>();
+
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();
             services.AddScoped<RMS.Application.Interfaces.IUnitOfWork>(sp => sp.GetRequiredService<RmsDbContext>());
