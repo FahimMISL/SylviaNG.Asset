@@ -27,7 +27,7 @@ public class Requisition : AuditableEntity
     public string? RequisitionNumber { get; set; }
 
     public RequisitionPriority Priority { get; set; } = RequisitionPriority.Medium;
-    public DateTime NeedByDate { get; set; }
+    public DateTime? NeedByDate { get; set; }
     public decimal EstimatedCost { get; set; }
     public string? Justification { get; set; }
 

@@ -1,4 +1,5 @@
 using RMS.Domain.Entities;
+using RMS.Domain.Enums;
 
 namespace RMS.Application.Interfaces;
 
@@ -16,7 +17,23 @@ public interface IRequisitionRepository
     Task<Requisition?> FindPotentialDuplicateAsync(
         Guid userId, Guid categoryId, DateTime needByDate, int totalQuantity, DateTime sinceUtc, CancellationToken cancellationToken = default);
 
+    /// <summary>Feature 4 replacement-rule check: the most recent Approved/PartiallyApproved
+    /// transition timestamp (RequisitionStatusHistory.CreatedAtUtc where ToStatus is one of those two)
+    /// among this user's requisitions for (CategoryId, CategoryItemId) whose CURRENT status is one of
+    /// qualifyingStatuses - i.e. it was actually approved at some point and hasn't since moved to a
+    /// status outside that set (Rejected/Cancelled/Draft/SentBack/Submitted/UnderReview requisitions
+    /// never count, not even as a "no prior request" fallback). Null if no such requisition exists -
+    /// PolicyEvaluationService treats that as "first-time request, allowed".</summary>
+    Task<DateTime?> GetMostRecentApprovedTransitionUtcAsync(
+        Guid userId, Guid categoryId, Guid? categoryItemId, List<RequisitionStatus> qualifyingStatuses,
+        CancellationToken cancellationToken = default);
+
     void Add(Requisition requisition);
+
+    /// <summary>Permanently removes a Requisition and its owned children (Items, FieldValues,
+    /// StatusHistory, Attachments) via the configured cascade-delete relationships. Only ever called on
+    /// a Draft - see DeleteRequisitionCommandHandler.</summary>
+    void Remove(Requisition requisition);
 
     /// <summary>
     /// Replaces a requisition's items by adding new ones directly against the

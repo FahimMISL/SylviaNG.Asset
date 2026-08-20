@@ -7,7 +7,7 @@ public record SaveRequisitionRequestBody(
     Guid CategoryId,
     List<RequisitionItemInput> Items,
     RequisitionPriority Priority,
-    DateTime NeedByDate,
+    DateTime? NeedByDate,
     decimal EstimatedCost,
     string? Justification,
     string? UrgencyJustification,

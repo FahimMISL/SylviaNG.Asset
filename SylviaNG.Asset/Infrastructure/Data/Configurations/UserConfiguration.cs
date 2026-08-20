@@ -15,6 +15,12 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.PasswordHash).IsRequired();
         builder.HasIndex(u => u.Email).IsUnique();
 
+        // Feature 4: flat eligibility attributes, all optional (see User.cs remarks).
+        builder.Property(u => u.Grade).HasMaxLength(100);
+        builder.Property(u => u.Designation).HasMaxLength(100);
+        builder.Property(u => u.Department).HasMaxLength(100);
+        builder.Property(u => u.Location).HasMaxLength(100);
+
         builder.HasOne(u => u.Company)
             .WithMany()
             .HasForeignKey(u => u.CompanyId)

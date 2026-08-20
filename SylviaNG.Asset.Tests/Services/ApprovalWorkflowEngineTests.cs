@@ -149,6 +149,40 @@ public class ApprovalWorkflowEngineTests
     }
 
     [Fact]
+    public async Task ResolveAndStartAsync_SelfSkippedCapturingStage_DoesNotAutoApproveCostConditionalNextStage()
+    {
+        // Bug: a Line Manager submitting their own request was the sole approver for the (capturing)
+        // Stage 1, so it auto-skipped - but since no cost was ever entered, Stage 2's "Cost > 20000"
+        // condition compared against the requisition's untouched EstimatedCost (0) and excluded Stage 2
+        // too, reaching full approval with no human ever reviewing it. Stage 2 must stay in play instead.
+        var deptHead = Guid.NewGuid();
+        var stage1 = NewStage(1, capturesCost: true);
+        stage1.Approvers.Add(new WorkflowApprover { ApproverType = ApproverType.SpecificUser, ApproverUserId = _requestorId, IsRequired = true });
+        var stage2 = NewStage(2);
+        stage2.Approvers.Add(new WorkflowApprover { ApproverType = ApproverType.SpecificUser, ApproverUserId = deptHead, IsRequired = true });
+        stage2.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 20000m });
+        var version = NewVersion(stage1, stage2);
+
+        _workflowRepository
+            .Setup(r => r.GetResolvableVersionAsync(_companyId, _categoryId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(version);
+        _userRepository.Setup(r => r.GetByIdAsync(_requestorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = _requestorId, FullName = "Self Approver", IsActive = true, CompanyId = _companyId });
+        _userRepository.Setup(r => r.GetByIdAsync(deptHead, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = deptHead, FullName = "Dept Head", IsActive = true, CompanyId = _companyId });
+
+        var requisition = NewRequisition(); // EstimatedCost never set - stays 0
+
+        await _engine.ResolveAndStartAsync(requisition, _requestorId, "Employee One", "Employee", CancellationToken.None);
+
+        requisition.Status.Should().Be(RequisitionStatus.UnderReview); // NOT auto-approved
+        _requisitionApprovalRepository.Verify(
+            r => r.AddAction(It.Is<RequisitionApprovalAction>(a => a.ActionType == ApprovalActionType.AutoSkip)), Times.Once);
+        _requisitionApprovalRepository.Verify(
+            r => r.AddAssignment(It.Is<RequisitionApprovalAssignment>(a => a.AssignedUserId == deptHead)), Times.Once);
+    }
+
+    [Fact]
     public async Task ResolveAndStartAsync_TwoSequentialStages_OnlyStartsFirstStage()
     {
         var approver1 = Guid.NewGuid();

@@ -13,7 +13,7 @@ public record PendingApprovalDto(
     string CategoryName,
     string Priority,
     decimal EstimatedCost,
-    DateTime NeedByDate,
+    DateTime? NeedByDate,
     DateTime SubmittedAtUtc,
     int StageOrder,
     string StageName,

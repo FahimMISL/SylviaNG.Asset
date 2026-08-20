@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using RMS.Api.Controllers.Requests;
 using RMS.Application.Features.Requisitions.Commands.CancelRequisition;
 using RMS.Application.Features.Requisitions.Commands.CreateRequisition;
+using RMS.Application.Features.Requisitions.Commands.DeleteRequisition;
 using RMS.Application.Features.Requisitions.Commands.DeleteRequisitionAttachment;
 using RMS.Application.Features.Requisitions.Commands.UpdateRequisition;
 using RMS.Application.Features.Requisitions.Commands.UploadRequisitionAttachment;
@@ -55,7 +56,7 @@ public class RequisitionsController : ControllerBase
     /// <summary>FR-RR-011: soft duplicate-submission warning, checked before Create/Update actually submits.</summary>
     [HttpGet("duplicate-check")]
     public async Task<ActionResult<DuplicateCheckResultDto>> CheckDuplicate(
-        [FromQuery] Guid categoryId, [FromQuery] DateTime needByDate, [FromQuery] int totalQuantity, CancellationToken cancellationToken)
+        [FromQuery] Guid categoryId, [FromQuery] DateTime? needByDate, [FromQuery] int totalQuantity, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new CheckDuplicateRequisitionQuery(categoryId, needByDate, totalQuantity), cancellationToken);
         return Ok(result);
@@ -116,6 +117,15 @@ public class RequisitionsController : ControllerBase
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId, CancellationToken cancellationToken)
     {
         await _sender.Send(new DeleteRequisitionAttachmentCommand(id, attachmentId), cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>Permanently deletes a Draft requisition - not yet in the approval workflow, so there's
+    /// nothing to cancel/undo, just remove it. Submitted (or later) requisitions must use Cancel instead.</summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await _sender.Send(new DeleteRequisitionCommand(id), cancellationToken);
         return NoContent();
     }
 }

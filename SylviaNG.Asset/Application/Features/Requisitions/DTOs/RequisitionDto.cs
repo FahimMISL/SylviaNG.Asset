@@ -40,7 +40,7 @@ public record RequisitionDto(
     string CategoryName,
     int CategoryVersionNumber,
     string Priority,
-    DateTime NeedByDate,
+    DateTime? NeedByDate,
     decimal EstimatedCost,
     string? Justification,
     string? UrgencyJustification,
@@ -97,7 +97,7 @@ public record RequisitionSummaryDto(
     string CategoryName,
     string Status,
     string Priority,
-    DateTime NeedByDate,
+    DateTime? NeedByDate,
     decimal EstimatedCost,
     DateTime CreatedAtUtc,
     int ItemCount)
