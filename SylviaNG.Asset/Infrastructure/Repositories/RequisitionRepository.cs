@@ -146,6 +146,55 @@ public class RequisitionRepository : IRequisitionRepository
     /// is already tracked by the time a command handler calls this.</summary>
     public void AddProcurementRecord(RequisitionProcurementRecord record) => _context.RequisitionProcurementRecords.Add(record);
 
+    public Task<List<Requisition>> GetForReportingAsync(
+        Guid companyId, DateTime? dateFrom, DateTime? dateTo, string? department, Guid? categoryId, Guid? categoryItemId,
+        List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? requesterSearch,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.StatusHistory)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.ApprovalWorkflowStage)
+            .Where(r => r.CompanyId == companyId && r.Status != RequisitionStatus.Draft);
+
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(r => r.SubmittedAtUtc != null && r.SubmittedAtUtc >= dateFrom.Value);
+        }
+        if (dateTo.HasValue)
+        {
+            query = query.Where(r => r.SubmittedAtUtc != null && r.SubmittedAtUtc <= dateTo.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(department))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == department);
+        }
+        if (categoryId.HasValue)
+        {
+            query = query.Where(r => r.CategoryId == categoryId.Value);
+        }
+        if (categoryItemId.HasValue)
+        {
+            query = query.Where(r => r.Items.Any(i => i.CategoryItemId == categoryItemId.Value));
+        }
+        if (statuses is { Count: > 0 })
+        {
+            query = query.Where(r => statuses.Contains(r.Status));
+        }
+        if (priority.HasValue)
+        {
+            query = query.Where(r => r.Priority == priority.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(requesterSearch))
+        {
+            query = query.Where(r => r.RequestedByUser!.FullName.ToLower().Contains(requesterSearch.ToLower()));
+        }
+
+        return query.OrderByDescending(r => r.CreatedAtUtc).ToListAsync(cancellationToken);
+    }
+
     public void AddAttachment(Requisition requisition, RequisitionAttachment attachment)
     {
         attachment.RequisitionId = requisition.Id;

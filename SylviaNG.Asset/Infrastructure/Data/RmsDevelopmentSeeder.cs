@@ -66,6 +66,10 @@ public static class RmsDevelopmentSeeder
             // their own submission.
             ("Hana HR (dev stub)", "hana.hr@rms.local", UserRole.HrManager,
                 "Manager", "HR Manager", EmploymentType.Permanent, "HR", "Head Office"),
+            // Feature 7: Ceo is an existing UserRole that's never been routed on before - the
+            // Executive Summary report is its first real use, needed to test CEO-only access.
+            ("Chris CEO (dev stub)", "chris.ceo@rms.local", UserRole.Ceo,
+                "Executive", "Chief Executive Officer", EmploymentType.Permanent, "Executive", "Head Office"),
         };
 
         foreach (var (fullName, email, role, grade, designation, employmentType, department, location) in demoActors)
