@@ -7,6 +7,10 @@ public interface IRequisitionRepository
 {
     Task<Requisition?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Feature 5: every requisition in the procurement pipeline for this company - no
+    /// per-user filter, since every Procurement Officer must see every match (no assignment).</summary>
+    Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default);
     Task<bool> HasRequisitionsForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
     Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
 
@@ -51,4 +55,9 @@ public interface IRequisitionRepository
     /// StatusHistory.Add(...) alone isn't reliable in that case. Not needed for a brand-new Requisition
     /// that hasn't been Add()-ed yet, since EF correctly discovers its whole graph as inserts.</summary>
     void AddStatusHistory(RequisitionStatusHistory entry);
+
+    /// <summary>Feature 5: registers a new procurement/fulfillment ledger entry directly against the
+    /// DbSet - see AddStatusHistory's remarks for why this bypasses the tracked parent's navigation
+    /// collection.</summary>
+    void AddProcurementRecord(RequisitionProcurementRecord record);
 }

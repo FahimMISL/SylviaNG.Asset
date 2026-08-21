@@ -17,7 +17,7 @@ public class RequisitionRepository : IRequisitionRepository
 
     public Task<Requisition?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         _context.Requisitions
-            .Include(r => r.Items)
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
             .Include(r => r.Category)
             .Include(r => r.CostCenter)
             .Include(r => r.FieldValues).ThenInclude(v => v.FieldDefinition)
@@ -30,6 +30,9 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.ApprovalWorkflowStage!).ThenInclude(s => s.Sla)
             .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Assignments).ThenInclude(x => x.AssignedUser)
             .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions).ThenInclude(act => act.PartialDecisions)
+            // Feature 5: procurement/fulfillment ledger, if any (created by ProcurementService) -
+            // needed by GetRequisitionByIdQueryHandler's ProcurementDto mapping.
+            .Include(r => r.ProcurementRecords.OrderBy(p => p.CreatedAtUtc)).ThenInclude(p => p.LineItems)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default) =>
@@ -37,6 +40,22 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.Items)
             .Include(r => r.Category)
             .Where(r => r.CompanyId == companyId && r.RequestedByUserId == userId)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>Feature 5: every requisition in the procurement pipeline for this company, regardless
+    /// of who requested it - no per-user filter, since rule 1 requires every Procurement Officer to
+    /// see every match with no assignment/round-robin.</summary>
+    public Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ProcurementRecords)
+            // Needed so ProcurementService.GetApprovedCeilings sees any PartialApprovalDecision for a
+            // PartiallyApproved requisition's estimated total in the queue list, same as GetByIdAsync.
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions).ThenInclude(act => act.PartialDecisions)
+            .Where(r => r.CompanyId == companyId && statuses.Contains(r.Status))
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -102,6 +121,11 @@ public class RequisitionRepository : IRequisitionRepository
     }
 
     public void AddStatusHistory(RequisitionStatusHistory entry) => _context.RequisitionStatusHistories.Add(entry);
+
+    /// <summary>Feature 5: registers a new procurement/fulfillment ledger entry directly against the
+    /// DbSet - same tracking-bug workaround as AddStatusHistory, needed since the parent Requisition
+    /// is already tracked by the time a command handler calls this.</summary>
+    public void AddProcurementRecord(RequisitionProcurementRecord record) => _context.RequisitionProcurementRecords.Add(record);
 
     public void AddAttachment(Requisition requisition, RequisitionAttachment attachment)
     {

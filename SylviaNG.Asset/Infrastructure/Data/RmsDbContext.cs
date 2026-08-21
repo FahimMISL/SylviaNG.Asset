@@ -45,6 +45,10 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<EligibilityPolicyCriterion> EligibilityPolicyCriteria => Set<EligibilityPolicyCriterion>();
     public DbSet<EligibilityPolicyReplacementRule> EligibilityPolicyReplacementRules => Set<EligibilityPolicyReplacementRule>();
 
+    // Feature 5 - Procurement & Fulfillment
+    public DbSet<RequisitionProcurementRecord> RequisitionProcurementRecords => Set<RequisitionProcurementRecord>();
+    public DbSet<RequisitionProcurementLineItem> RequisitionProcurementLineItems => Set<RequisitionProcurementLineItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Scoped to this namespace only: RmsDbContext shares its assembly with
