@@ -59,6 +59,13 @@ public static class RmsDevelopmentSeeder
                 "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
             ("Noah Procurement (dev stub)", "noah.procurement@rms.local", UserRole.ProcurementOfficer,
                 "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
+            // Feature 6: HrManager is an existing UserRole that's never been routed on before - the
+            // Manpower Requisition approval workflow is Admin-configured (not hardcoded) but a
+            // sensible default is "HR Review", assigned to HrManager rather than DepartmentHead,
+            // since a Department Head submitting a manpower request must never end up approving
+            // their own submission.
+            ("Hana HR (dev stub)", "hana.hr@rms.local", UserRole.HrManager,
+                "Manager", "HR Manager", EmploymentType.Permanent, "HR", "Head Office"),
         };
 
         foreach (var (fullName, email, role, grade, designation, employmentType, department, location) in demoActors)

@@ -117,7 +117,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             else
             {
                 var year = DateTime.UtcNow.Year;
-                var sequence = await _requisitionRepository.CountNumberedInYearAsync(year, cancellationToken) + 1;
+                var sequence = await _requisitionRepository.GetHighestSequenceInYearAsync(year, cancellationToken) + 1;
                 transitionEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);
             }
             // requisition was loaded (already tracked), so the new StatusHistory entry needs to be
