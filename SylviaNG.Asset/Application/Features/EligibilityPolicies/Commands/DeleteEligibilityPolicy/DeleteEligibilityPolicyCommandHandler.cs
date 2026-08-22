@@ -25,12 +25,8 @@ public class DeleteEligibilityPolicyCommandHandler : IRequestHandler<DeleteEligi
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
-        var policy = await _policyRepository.GetByIdAsync(request.PolicyId, cancellationToken)
+        var policy = await _policyRepository.GetByIdAsync(companyId, request.PolicyId, cancellationToken)
             ?? throw new NotFoundException(nameof(EligibilityPolicy), request.PolicyId);
-        if (policy.CompanyId != companyId)
-        {
-            throw new ForbiddenException();
-        }
 
         _policyRepository.Remove(policy);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

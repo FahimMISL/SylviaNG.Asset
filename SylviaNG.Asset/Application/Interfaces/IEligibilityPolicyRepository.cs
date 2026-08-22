@@ -4,7 +4,10 @@ namespace RMS.Application.Interfaces;
 
 public interface IEligibilityPolicyRepository
 {
-    Task<EligibilityPolicy?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    /// <summary>Feature 10: scoped by CompanyId (like every other repository's GetByIdAsync) so a
+    /// mismatched company's policy 404s instead of being readable by GUID alone - closes a real
+    /// cross-tenant leak this method used to have.</summary>
+    Task<EligibilityPolicy?> GetByIdAsync(Guid companyId, Guid id, CancellationToken cancellationToken = default);
     Task<List<EligibilityPolicy>> GetAllAsync(Guid companyId, CancellationToken cancellationToken = default);
 
     /// <summary>At-most-one-active-per-scope guard used by Create/Update handlers (returns true if an

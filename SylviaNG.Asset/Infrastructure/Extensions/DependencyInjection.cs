@@ -125,6 +125,10 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
             services.AddScoped<INotificationTemplateRepository, NotificationTemplateRepository>();
 
+            // Feature 10 - Role-Based Access Control
+            services.AddScoped<IPermissionService, PermissionService>();
+            services.AddScoped<IRolePermissionRepository, RolePermissionRepository>();
+
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();
             services.AddScoped<RMS.Application.Interfaces.IUnitOfWork>(sp => sp.GetRequiredService<RmsDbContext>());

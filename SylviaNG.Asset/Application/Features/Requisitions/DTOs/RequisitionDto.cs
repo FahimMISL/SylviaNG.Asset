@@ -115,9 +115,10 @@ public record RequisitionSummaryDto(
     DateTime? NeedByDate,
     decimal EstimatedCost,
     DateTime CreatedAtUtc,
-    int ItemCount)
+    int ItemCount,
+    string? RequesterName)
 {
     public static RequisitionSummaryDto FromEntity(Requisition r) => new(
         r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(), r.Priority.ToString(),
-        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count);
+        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count, r.RequestedByUser?.FullName);
 }

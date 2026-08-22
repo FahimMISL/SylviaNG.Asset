@@ -10,6 +10,7 @@ using RMS.Application.Features.Requisitions.Commands.UpdateRequisition;
 using RMS.Application.Features.Requisitions.Commands.UploadRequisitionAttachment;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Features.Requisitions.Queries.CheckDuplicateRequisition;
+using RMS.Application.Features.Requisitions.Queries.GetDepartmentRequisitions;
 using RMS.Application.Features.Requisitions.Queries.GetMyRequisitions;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionAttachmentDownload;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionById;
@@ -43,6 +44,15 @@ public class RequisitionsController : ControllerBase
     public async Task<ActionResult<List<RequisitionSummaryDto>>> GetMine(CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetMyRequisitionsQuery(), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Feature 10 (US-032) - DepartmentHead only: every requisition raised by someone in the
+    /// caller's own department.</summary>
+    [HttpGet("department")]
+    public async Task<ActionResult<List<RequisitionSummaryDto>>> GetDepartment(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetDepartmentRequisitionsQuery(), cancellationToken);
         return Ok(result);
     }
 

@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using RMS.Application.Features.Users.Commands.UpdateUserRole;
 using RMS.Application.Features.Users.DTOs;
 using RMS.Application.Features.Users.Queries.GetUsers;
 using RMS.Domain.Enums;
@@ -33,5 +34,16 @@ public class UsersController : ControllerBase
     {
         var result = await _sender.Send(new GetUsersQuery(role), cancellationToken);
         return Ok(result);
+    }
+
+    public record UpdateRoleBody(UserRole NewRole);
+
+    /// <summary>Feature 10 (US-031) - the one write capability this feature adds to this previously
+    /// read-only directory. Permission-guarded (Module=Rbac, Action=Edit) in the handler itself.</summary>
+    [HttpPut("{id:guid}/role")]
+    public async Task<IActionResult> UpdateRole(Guid id, [FromBody] UpdateRoleBody body, CancellationToken cancellationToken)
+    {
+        await _sender.Send(new UpdateUserRoleCommand(id, body.NewRole), cancellationToken);
+        return NoContent();
     }
 }

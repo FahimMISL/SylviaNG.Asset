@@ -1,4 +1,5 @@
 using SylviaNG.Assets.Application.Common.Exceptions;
+using RMS.Application.Interfaces;
 using System.Text.Json;
 
 namespace SylviaNG.Assets.Middlewares
@@ -14,7 +15,7 @@ namespace SylviaNG.Assets.Middlewares
             _logger = logger;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        public async Task InvokeAsync(HttpContext context, IAuditLogger auditLogger, ICurrentUserService currentUser)
         {
             try
             {
@@ -33,6 +34,20 @@ namespace SylviaNG.Assets.Middlewares
             catch (ForbiddenException ex)
             {
                 _logger.LogWarning(ex, "Forbidden.");
+                // Feature 10 (Section 10): one hook covers every 403 across the whole app, existing and
+                // new, without touching individual handlers. Best-effort - a failure here must never
+                // hide the real 403 response from the caller.
+                try
+                {
+                    await auditLogger.LogAsync(
+                        "UnauthorizedAccessAttempt", "Endpoint", Guid.Empty,
+                        $"Path={context.Request.Method} {context.Request.Path}; Role={currentUser.Role}; Reason={ex.Message}",
+                        context.RequestAborted);
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogError(auditEx, "Failed to audit-log an UnauthorizedAccessAttempt.");
+                }
                 await HandleExceptionAsync(context, StatusCodes.Status403Forbidden, ex.Message);
             }
             catch (FluentValidation.ValidationException ex)
