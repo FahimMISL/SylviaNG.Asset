@@ -78,7 +78,9 @@ public class SendBackApprovalCommandHandler : IRequestHandler<SendBackApprovalCo
             throw new ConflictException("This approval was already acted on. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalSentBack", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={requisition.Id}, StageOrder={approval.StageOrder}", cancellationToken);
+        // Feature 8: anchored to the requisition itself (not the stage instance) so "view audit
+        // history for one requisition" actually finds every approval decision made on it.
+        await _auditLogger.LogAsync("ApprovalSentBack", nameof(Requisition), requisition.Id,
+            $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
     }
 }

@@ -95,7 +95,8 @@ public class PartialApproveApprovalCommandHandler : IRequestHandler<PartialAppro
             throw new ConflictException("This approval was already acted on. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalPartiallyApproved", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={requisition.Id}, StageOrder={approval.StageOrder}", cancellationToken);
+        // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
+        await _auditLogger.LogAsync("ApprovalPartiallyApproved", nameof(Requisition), requisition.Id,
+            $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
     }
 }

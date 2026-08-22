@@ -81,7 +81,8 @@ public class RespondToClarificationCommandHandler : IRequestHandler<RespondToCla
             throw new ConflictException("This approval was already updated. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalClarificationResponded", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={requisition.Id}", cancellationToken);
+        // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
+        await _auditLogger.LogAsync("ApprovalClarificationResponded", nameof(Requisition), requisition.Id,
+            $"Comment={request.Comment}", cancellationToken);
     }
 }
