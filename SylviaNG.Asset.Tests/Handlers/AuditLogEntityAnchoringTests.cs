@@ -28,6 +28,7 @@ public class AuditLogEntityAnchoringTests
         var workflowRepository = new Mock<IApprovalWorkflowRepository>();
         var requisitionRepository = new Mock<IRequisitionRepository>();
         var userRepository = new Mock<IUserRepository>();
+        var notificationService = new Mock<INotificationService>();
 
         var requisition = new Requisition
         {
@@ -65,7 +66,8 @@ public class AuditLogEntityAnchoringTests
 
         var engine = new ApprovalWorkflowEngine(workflowRepository.Object, requisitionApprovalRepository.Object, requisitionRepository.Object, userRepository.Object);
         var handler = new ApproveApprovalCommandHandler(
-            requisitionApprovalRepository.Object, delegationRepository.Object, currentUser.Object, auditLogger.Object, unitOfWork.Object, engine);
+            requisitionApprovalRepository.Object, delegationRepository.Object, currentUser.Object, auditLogger.Object, unitOfWork.Object, engine,
+            notificationService.Object);
 
         await handler.Handle(new ApproveApprovalCommand(approval.Id, "Looks good.", null), CancellationToken.None);
 
@@ -87,6 +89,7 @@ public class AuditLogEntityAnchoringTests
         var currentUser = new Mock<ICurrentUserService>();
         var auditLogger = new Mock<IAuditLogger>();
         var unitOfWork = new Mock<IUnitOfWork>();
+        var notificationService = new Mock<INotificationService>();
 
         var requisition = new Requisition
         {
@@ -121,7 +124,7 @@ public class AuditLogEntityAnchoringTests
 
         var handler = new RejectApprovalCommandHandler(
             requisitionApprovalRepository.Object, requisitionRepository.Object, delegationRepository.Object,
-            currentUser.Object, auditLogger.Object, unitOfWork.Object);
+            currentUser.Object, auditLogger.Object, unitOfWork.Object, notificationService.Object);
 
         await handler.Handle(new RejectApprovalCommand(approval.Id, "Missing budget approval."), CancellationToken.None);
 

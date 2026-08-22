@@ -24,6 +24,7 @@ public class ApproveApprovalRoleFanoutTests
     private readonly Mock<IApprovalWorkflowRepository> _workflowRepository = new();
     private readonly Mock<IRequisitionRepository> _requisitionRepository = new();
     private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<INotificationService> _notificationService = new();
 
     [Fact]
     public async Task Approve_FirstOfThreeRoleHolders_CompletesStage_ClosesSiblings_AndAdvancesRequisition()
@@ -79,7 +80,8 @@ public class ApproveApprovalRoleFanoutTests
 
         var engine = new ApprovalWorkflowEngine(_workflowRepository.Object, _requisitionApprovalRepository.Object, _requisitionRepository.Object, _userRepository.Object);
         var handler = new ApproveApprovalCommandHandler(
-            _requisitionApprovalRepository.Object, _delegationRepository.Object, _currentUser.Object, _auditLogger.Object, _unitOfWork.Object, engine);
+            _requisitionApprovalRepository.Object, _delegationRepository.Object, _currentUser.Object, _auditLogger.Object, _unitOfWork.Object, engine,
+            _notificationService.Object);
 
         await handler.Handle(new ApproveApprovalCommand(approval.Id, "Approved on behalf of the department.", null), CancellationToken.None);
 

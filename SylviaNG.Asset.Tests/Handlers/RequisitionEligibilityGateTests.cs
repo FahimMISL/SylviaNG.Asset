@@ -28,6 +28,7 @@ public class RequisitionEligibilityGateTests
     private readonly Mock<IUserRepository> _userRepository = new();
     private readonly Mock<IApprovalWorkflowRepository> _workflowRepository = new();
     private readonly Mock<IRequisitionApprovalRepository> _requisitionApprovalRepository = new();
+    private readonly Mock<INotificationService> _notificationService = new();
 
     private readonly Guid _companyId = Guid.NewGuid();
     private readonly Guid _categoryId = Guid.NewGuid();
@@ -67,7 +68,7 @@ public class RequisitionEligibilityGateTests
 
         _handler = new CreateRequisitionCommandHandler(
             _requisitionRepository.Object, _categoryRepository.Object, _currentUser.Object, _auditLogger.Object, _unitOfWork.Object,
-            _approvalWorkflowEngine, _policyEvaluationService);
+            _approvalWorkflowEngine, _policyEvaluationService, _notificationService.Object);
     }
 
     private CreateRequisitionCommand BuildCommand(bool submit) => new(

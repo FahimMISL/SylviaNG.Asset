@@ -111,7 +111,6 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<IRequisitionApprovalRepository, RequisitionApprovalRepository>();
             services.AddScoped<IApprovalDelegationRepository, ApprovalDelegationRepository>();
             services.AddScoped<IUserRepository, UserRepository>();
-            services.AddScoped<INotificationService, NoOpNotificationService>();
             services.AddHostedService<SlaBreachEscalationService>();
 
             // Feature 4 - Eligibility & Policy Management
@@ -119,6 +118,12 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
 
             // Feature 8 - Audit & Compliance
             services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+
+            // Feature 9 - Notification Center (replaces the Feature 3 NoOpNotificationService stub)
+            services.AddScoped<INotificationService, NotificationService>();
+            services.AddScoped<INotificationRepository, NotificationRepository>();
+            services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
+            services.AddScoped<INotificationTemplateRepository, NotificationTemplateRepository>();
 
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();

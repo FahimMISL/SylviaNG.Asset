@@ -16,10 +16,12 @@ public class RejectApprovalCommandHandler : IRequestHandler<RejectApprovalComman
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
     public RejectApprovalCommandHandler(
         IRequisitionApprovalRepository requisitionApprovalRepository, IRequisitionRepository requisitionRepository,
-        IApprovalDelegationRepository delegationRepository, ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork)
+        IApprovalDelegationRepository delegationRepository, ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork,
+        INotificationService notificationService)
     {
         _requisitionApprovalRepository = requisitionApprovalRepository;
         _requisitionRepository = requisitionRepository;
@@ -27,6 +29,7 @@ public class RejectApprovalCommandHandler : IRequestHandler<RejectApprovalComman
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     public async Task Handle(RejectApprovalCommand request, CancellationToken cancellationToken)
@@ -84,5 +87,16 @@ public class RejectApprovalCommandHandler : IRequestHandler<RejectApprovalComman
         // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
         await _auditLogger.LogAsync("ApprovalRejected", nameof(Requisition), requisition.Id,
             $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
+
+        // Feature 9 (US-028): critical - never suppressed by a preference, see NotificationEventTypeCatalog.
+        await _notificationService.NotifyAsync(new NotificationRequest(
+            requisition.CompanyId, requisition.RequestedByUserId, NotificationEventType.RequisitionRejected, requisition.Id,
+            new Dictionary<string, string>
+            {
+                ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                ["ActorName"] = actorName,
+                ["ActorRole"] = actorRole ?? "N/A",
+                ["Comment"] = request.Comment,
+            }), cancellationToken);
     }
 }

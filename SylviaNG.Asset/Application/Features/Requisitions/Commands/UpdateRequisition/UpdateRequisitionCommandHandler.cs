@@ -19,6 +19,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
     private readonly IUnitOfWork _unitOfWork;
     private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
     private readonly PolicyEvaluationService _policyEvaluationService;
+    private readonly INotificationService _notificationService;
 
     public UpdateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
@@ -27,7 +28,8 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         IAuditLogger auditLogger,
         IUnitOfWork unitOfWork,
         ApprovalWorkflowEngine approvalWorkflowEngine,
-        PolicyEvaluationService policyEvaluationService)
+        PolicyEvaluationService policyEvaluationService,
+        INotificationService notificationService)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
@@ -36,6 +38,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         _unitOfWork = unitOfWork;
         _approvalWorkflowEngine = approvalWorkflowEngine;
         _policyEvaluationService = policyEvaluationService;
+        _notificationService = notificationService;
     }
 
     public async Task<RequisitionDto> Handle(UpdateRequisitionCommand request, CancellationToken cancellationToken)
@@ -116,6 +119,8 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             .Select(v => new RequisitionFieldValue { FieldDefinitionId = v.FieldDefinitionId, Value = v.Value })
             .ToList());
 
+        var pendingNotifications = new List<NotificationRequest>();
+
         if (request.Submit)
         {
             RequisitionStatusHistory transitionEntry;
@@ -137,14 +142,9 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             // CreateRequisitionCommandHandler only covers a requisition submitted immediately. Without
             // this call the requisition would sit at Submitted forever with no ApprovalProcess and never
             // reach any approver's inbox.
-            if (isAmendment)
-            {
-                await _approvalWorkflowEngine.ResumeAfterSendBackAsync(requisition, userId, actorName, actorRole, cancellationToken);
-            }
-            else
-            {
-                await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken);
-            }
+            pendingNotifications.AddRange(isAmendment
+                ? await _approvalWorkflowEngine.ResumeAfterSendBackAsync(requisition, userId, actorName, actorRole, cancellationToken)
+                : await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken));
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -160,6 +160,24 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             await _auditLogger.LogAsync(
                 request.Submit ? "RequisitionSubmitted" : "RequisitionDraftSaved",
                 nameof(Requisition), requisition.Id, $"CategoryId={requisition.CategoryId}", cancellationToken);
+        }
+
+        // Feature 9 (US-028): confirmation to the requestor that the (re)submission went through,
+        // sent alongside whatever the approval engine queued - only now, after SaveChangesAsync.
+        if (request.Submit)
+        {
+            pendingNotifications.Add(new NotificationRequest(
+                requisition.CompanyId, userId, NotificationEventType.RequisitionSubmitted, requisition.Id,
+                new Dictionary<string, string>
+                {
+                    ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                    ["Category"] = category.Name,
+                    ["Item"] = resolvedItems.Count > 0 ? string.Join(", ", resolvedItems.Select(i => $"{i.ItemName} x{i.Quantity}")) : "N/A",
+                }));
+        }
+        foreach (var notification in pendingNotifications)
+        {
+            await _notificationService.NotifyAsync(notification, cancellationToken);
         }
 
         var saved = await _requisitionRepository.GetByIdAsync(requisition.Id, cancellationToken) ?? requisition;

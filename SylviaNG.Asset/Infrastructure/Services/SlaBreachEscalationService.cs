@@ -88,11 +88,13 @@ public class SlaBreachEscalationService : BackgroundService
                 actorUserId: null, actorName: "System", actorRole: null,
                 comment: "Automatically escalated: SLA due date was breached.");
 
+            var requisition = approval.RequisitionApprovalProcess.Requisition!;
             foreach (var targetUserId in targets)
             {
-                await notificationService.NotifyAsync(
-                    targetUserId, "Approval escalated to you (SLA breach)",
-                    $"An approval on requisition {approval.RequisitionApprovalProcess.Requisition?.RequisitionNumber} breached its SLA and was escalated to you.",
+                await notificationService.NotifyAsync(new NotificationRequest(
+                    requisition.CompanyId, targetUserId, NotificationEventType.SlaBreachEscalated,
+                    requisition.Id,
+                    new Dictionary<string, string> { ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A" }),
                     cancellationToken);
             }
         }
@@ -104,6 +106,7 @@ public class SlaBreachEscalationService : BackgroundService
         var active = await context.RequisitionApprovals
             .Include(a => a.ApprovalWorkflowStage!).ThenInclude(s => s.Sla)
             .Include(a => a.Assignments)
+            .Include(a => a.RequisitionApprovalProcess!).ThenInclude(p => p.Requisition)
             .Where(a => (a.Status == RequisitionApprovalStatus.Pending || a.Status == RequisitionApprovalStatus.InProgress)
                 && a.SlaStartUtc != null && a.SlaDueUtc != null)
             .ToListAsync(cancellationToken);
@@ -152,11 +155,19 @@ public class SlaBreachEscalationService : BackgroundService
             TimestampUtc = DateTime.UtcNow,
         });
 
+        var requisition = approval.RequisitionApprovalProcess?.Requisition;
+        if (requisition is null)
+        {
+            return;
+        }
+
         foreach (var assignment in approval.Assignments.Where(a => !a.HasActed))
         {
-            await notificationService.NotifyAsync(
-                assignment.AssignedUserId, $"Approval SLA reminder ({thresholdLabel})",
-                "A pending approval assigned to you is approaching its SLA due date.", cancellationToken);
+            await notificationService.NotifyAsync(new NotificationRequest(
+                requisition.CompanyId, assignment.AssignedUserId, NotificationEventType.SlaReminder,
+                requisition.Id,
+                new Dictionary<string, string> { ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A" }),
+                cancellationToken);
         }
     }
 }

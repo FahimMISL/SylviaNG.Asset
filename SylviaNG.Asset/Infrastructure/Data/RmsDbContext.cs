@@ -49,6 +49,11 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<RequisitionProcurementRecord> RequisitionProcurementRecords => Set<RequisitionProcurementRecord>();
     public DbSet<RequisitionProcurementLineItem> RequisitionProcurementLineItems => Set<RequisitionProcurementLineItem>();
 
+    // Feature 9 - Notification Center
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Scoped to this namespace only: RmsDbContext shares its assembly with

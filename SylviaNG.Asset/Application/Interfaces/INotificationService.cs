@@ -1,11 +1,9 @@
 namespace RMS.Application.Interfaces;
 
-/// <summary>
-/// Per spec section 29: the actual "send a notification" call is isolated behind this interface so a
-/// real implementation (email/push/in-app) can be plugged in later (Feature 11) without touching any
-/// approval-workflow code. No notification platform is built as part of Feature 3.
-/// </summary>
+/// <summary>Centralized notification send path backing US-028/US-029/US-030(delivery). Checks the
+/// recipient's preference (unless the event type is critical), renders the applicable template,
+/// persists the in-app Notification row, and logs delivery via IAuditLogger.</summary>
 public interface INotificationService
 {
-    Task NotifyAsync(Guid userId, string subject, string message, CancellationToken cancellationToken = default);
+    Task NotifyAsync(NotificationRequest request, CancellationToken cancellationToken = default);
 }
