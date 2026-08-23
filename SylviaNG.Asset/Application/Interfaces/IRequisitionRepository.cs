@@ -1,3 +1,4 @@
+using RMS.Application.Common;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
 
@@ -78,4 +79,21 @@ public interface IRequisitionRepository
         Guid companyId, DateTime? dateFrom, DateTime? dateTo, string? department, Guid? categoryId, Guid? categoryItemId,
         List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? requesterSearch,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Feature 11: server-side, multi-criteria, paginated search. The three scope parameters are
+    /// mutually exclusive and mirror the exact data boundary each of GetAllForUserAsync (ownerUserId),
+    /// GetForDepartmentAsync (scopeDepartment), and GetForProcurementAsync (scopeToPipeline) already
+    /// enforce - not a new access rule, the same one generalized into a single searchable query. All
+    /// null/false means unrestricted (SystemAdmin only - the handler is responsible for never passing
+    /// that combination for anyone else). freeText matches (case-insensitively) RequisitionNumber,
+    /// RequestedByUser.FullName, Category.Name, or any Items[].ItemName - the last of these is what
+    /// makes searching a manpower Position (e.g. "Software Engineer") find the requisition that has it
+    /// as a line, without a separate manpower search path.
+    /// </summary>
+    Task<PagedResult<Requisition>> SearchAsync(
+        Guid companyId, Guid? ownerUserId, string? scopeDepartment, bool scopeToPipeline,
+        string? freeText, string? requesterSearch, List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? department,
+        Guid? categoryId, Guid? categoryItemId, DateTime? dateFrom, DateTime? dateTo, DateTime? needByFrom, DateTime? needByTo,
+        string sortBy, bool sortDescending, int page, int pageSize, CancellationToken cancellationToken = default);
 }

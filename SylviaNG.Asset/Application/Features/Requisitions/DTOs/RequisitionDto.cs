@@ -1,5 +1,6 @@
 using RMS.Application.Features.Approvals.DTOs;
 using RMS.Application.Features.Procurement.DTOs;
+using RMS.Application.Features.Reporting.Services;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
 
@@ -121,4 +122,29 @@ public record RequisitionSummaryDto(
     public static RequisitionSummaryDto FromEntity(Requisition r) => new(
         r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(), r.Priority.ToString(),
         r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count, r.RequestedByUser?.FullName);
+}
+
+/// <summary>Feature 11: one search result row. ApprovalStatus/ProcurementStatus reuse
+/// ReportingCalculations' own display logic (Feature 7) rather than duplicating it - they're computed
+/// from Status, not separate stored columns, so there's nothing new to keep in sync.</summary>
+public record RequisitionSearchResultDto(
+    Guid Id,
+    string? RequisitionNumber,
+    string CategoryName,
+    string Status,
+    string ApprovalStatus,
+    string? ProcurementStatus,
+    string Priority,
+    DateTime? NeedByDate,
+    decimal EstimatedCost,
+    DateTime CreatedAtUtc,
+    int ItemCount,
+    string? RequesterName,
+    string? Department)
+{
+    public static RequisitionSearchResultDto FromEntity(Requisition r) => new(
+        r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(),
+        ReportingCalculations.DescribeApprovalStatus(r), ReportingCalculations.DescribeProcurementStatus(r),
+        r.Priority.ToString(), r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count,
+        r.RequestedByUser?.FullName, r.RequestedByUser?.Department);
 }

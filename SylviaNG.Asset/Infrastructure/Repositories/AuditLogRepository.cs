@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RMS.Application.Common;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
 using RMS.Infrastructure.Data;
@@ -14,7 +15,7 @@ public class AuditLogRepository : IAuditLogRepository
         _context = context;
     }
 
-    public async Task<List<AuditLog>> GetFilteredAsync(
+    public async Task<PagedResult<AuditLog>> GetFilteredAsync(
         Guid companyId,
         Guid? requisitionId,
         DateTime? dateFrom,
@@ -23,6 +24,8 @@ public class AuditLogRepository : IAuditLogRepository
         string? actionType,
         Guid? categoryId,
         string? department,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken = default)
     {
         // Feature 8: AuditLog.CompanyId is captured directly at write time (AuditLogger.WriteAsync),
@@ -76,6 +79,10 @@ public class AuditLogRepository : IAuditLogRepository
             query = query.Where(a => a.ActionType == actionType);
         }
 
-        return await query.OrderByDescending(a => a.TimestampUtc).ToListAsync(cancellationToken);
+        query = query.OrderByDescending(a => a.TimestampUtc);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        return new PagedResult<AuditLog>(items, totalCount, page, pageSize);
     }
 }
