@@ -13,6 +13,11 @@ public interface IRequisitionRepository
     /// by someone in the given department, mirroring GetAllForUserAsync's shape exactly.</summary>
     Task<List<Requisition>> GetForDepartmentAsync(Guid companyId, string department, CancellationToken cancellationToken = default);
 
+    /// <summary>Feature 12: HR Manager's own company-wide data-scoping read - every Manpower-category
+    /// requisition regardless of requester/department. Callers must restrict who's allowed to invoke
+    /// this (see GetManpowerSummaryQueryHandler).</summary>
+    Task<List<Requisition>> GetManpowerForCompanyAsync(Guid companyId, CancellationToken cancellationToken = default);
+
     /// <summary>Feature 5: every requisition in the procurement pipeline for this company - no
     /// per-user filter, since every Procurement Officer must see every match (no assignment).</summary>
     Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default);

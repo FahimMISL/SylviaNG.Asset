@@ -1,4 +1,5 @@
 using FluentAssertions;
+using RMS.Application.Features.Reporting.DTOs;
 using RMS.Application.Features.Reporting.Services;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
@@ -160,5 +161,34 @@ public class ReportingCalculationsTests
         var summary = ReportingCalculations.BuildSummary([NewRequisition(RequisitionStatus.Draft)]);
 
         summary.AverageApprovalDays.Should().BeNull();
+    }
+
+    [Fact]
+    public void BuildSummary_TopDepartments_RanksByCountDescending()
+    {
+        var itCategory = new RequisitionCategory { Name = "IT" };
+        var it1 = NewRequisition(RequisitionStatus.Approved, itCategory);
+        var it2 = NewRequisition(RequisitionStatus.Approved, itCategory);
+        var hr = new Requisition { Status = RequisitionStatus.Approved, Category = itCategory, RequestedByUser = new User { FullName = "HR Person", Department = "HR" } };
+
+        var summary = ReportingCalculations.BuildSummary([it1, it2, hr]);
+
+        summary.TopDepartments.Should().ContainInOrder(
+            new DepartmentCountDto("IT", 2),
+            new DepartmentCountDto("HR", 1));
+    }
+
+    [Fact]
+    public void BuildSummary_CategoryBreakdown_CountsEveryCategoryPresent()
+    {
+        var it = NewRequisition(RequisitionStatus.Approved, new RequisitionCategory { Name = "IT Equipment" });
+        var manpower1 = NewRequisition(RequisitionStatus.Approved, new RequisitionCategory { Name = "Manpower" });
+        var manpower2 = NewRequisition(RequisitionStatus.Approved, new RequisitionCategory { Name = "Manpower" });
+
+        var summary = ReportingCalculations.BuildSummary([it, manpower1, manpower2]);
+
+        summary.CategoryBreakdown.Should().ContainInOrder(
+            new CategoryCountDto("Manpower", 2),
+            new CategoryCountDto("IT Equipment", 1));
     }
 }
