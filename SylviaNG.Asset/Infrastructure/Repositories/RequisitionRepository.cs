@@ -57,6 +57,19 @@ public class RequisitionRepository : IRequisitionRepository
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    /// <summary>Feature 12: HR Manager's own company-wide data-scoping read - every requisition in the
+    /// "Manpower" category regardless of requester/department, mirroring GetForDepartmentAsync's shape.
+    /// No prior art existed for HR Manager seeing anything beyond their own submissions before this;
+    /// callers must restrict who's allowed to invoke this (see GetManpowerSummaryQueryHandler).</summary>
+    public Task<List<Requisition>> GetManpowerForCompanyAsync(Guid companyId, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Where(r => r.CompanyId == companyId && r.Category != null && EF.Functions.ILike(r.Category.Name, "Manpower"))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
     /// <summary>Feature 5: every requisition in the procurement pipeline for this company, regardless
     /// of who requested it - no per-user filter, since rule 1 requires every Procurement Officer to
     /// see every match with no assignment/round-robin.</summary>

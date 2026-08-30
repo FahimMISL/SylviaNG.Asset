@@ -21,10 +21,18 @@ public record OperationalReportRowDto(
 
 public record MonthlyTrendPointDto(string MonthLabel, int SubmittedCount);
 
+/// <summary>Feature 12 (Dashboard): a snapshot count, not a stored field.</summary>
+public record DepartmentCountDto(string Department, int Count);
+
+/// <summary>Feature 12 (Dashboard): a snapshot count, not a stored field.</summary>
+public record CategoryCountDto(string CategoryName, int Count);
+
 /// <summary>US-025: CEO Executive Summary. Deliberately has no budget/vendor/inventory/finance-rule
 /// field anywhere - none of that data exists anywhere in this system to report on. EligibilityBlockNote
 /// discloses a real, confirmed limitation (blocked submissions are never persisted - see
-/// CreateRequisitionCommandHandler) rather than fabricating a blocked-request count.</summary>
+/// CreateRequisitionCommandHandler) rather than fabricating a blocked-request count. TopDepartments/
+/// CategoryBreakdown added for Feature 12's CEO/Admin dashboard - computed from the same already-loaded
+/// requisition list as everything else here, not a second query.</summary>
 public record ExecutiveSummaryDto(
     int TotalRequisitions,
     int PendingCount,
@@ -37,4 +45,6 @@ public record ExecutiveSummaryDto(
     int ManpowerTotalPositionsRequested,
     double? AverageApprovalDays,
     List<MonthlyTrendPointDto> MonthlyTrend,
-    string EligibilityBlockNote);
+    string EligibilityBlockNote,
+    List<DepartmentCountDto> TopDepartments,
+    List<CategoryCountDto> CategoryBreakdown);
