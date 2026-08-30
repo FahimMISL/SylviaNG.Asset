@@ -22,10 +22,20 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<RequisitionItem> RequisitionItems => Set<RequisitionItem>();
     public DbSet<RequisitionFieldValue> RequisitionFieldValues => Set<RequisitionFieldValue>();
     public DbSet<CategoryItem> CategoryItems => Set<CategoryItem>();
+    public DbSet<RequisitionStatusHistory> RequisitionStatusHistories => Set<RequisitionStatusHistory>();
+    public DbSet<RequisitionAttachment> RequisitionAttachments => Set<RequisitionAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(RmsDbContext).Assembly);
+        // Scoped to this namespace only: RmsDbContext shares its assembly with
+        // ApplicationDBContext (Asset/Employee), which also calls
+        // ApplyConfigurationsFromAssembly. An unscoped scan here would pull in
+        // Asset/Employee's IEntityTypeConfiguration too and, transitively via
+        // Audit.DomainEvents, a keyless DomainEvent type this context never
+        // declares a DbSet for.
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(RmsDbContext).Assembly,
+            type => type.Namespace == "RMS.Infrastructure.Data.Configurations");
         base.OnModelCreating(modelBuilder);
     }
 }
