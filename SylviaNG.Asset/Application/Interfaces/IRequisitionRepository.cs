@@ -14,8 +14,11 @@ public interface IRequisitionRepository
     Task<bool> HasRequisitionsForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
     Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
 
-    /// <summary>FR-RR-004: how many requisitions already have a number for this year, to derive the next sequence.</summary>
-    Task<int> CountNumberedInYearAsync(int year, CancellationToken cancellationToken = default);
+    /// <summary>FR-RR-004: the highest sequence number already assigned this year, to derive the next
+    /// one (highest + 1) - not a count of currently-existing rows, since a deleted requisition (see
+    /// DeleteRequisitionCommand's UnderReview case) would otherwise leave a gap that a count-based
+    /// "next sequence" collides into.</summary>
+    Task<int> GetHighestSequenceInYearAsync(int year, CancellationToken cancellationToken = default);
 
     /// <summary>FR-RR-011: the most recent match, if any, for the soft duplicate-submission warning.</summary>
     Task<Requisition?> FindPotentialDuplicateAsync(

@@ -108,7 +108,7 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             }
 
             var year = DateTime.UtcNow.Year;
-            var sequence = await _requisitionRepository.CountNumberedInYearAsync(year, cancellationToken) + 1;
+            var sequence = await _requisitionRepository.GetHighestSequenceInYearAsync(year, cancellationToken) + 1;
             var submitEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);
             _requisitionRepository.AddStatusHistory(submitEntry);
 

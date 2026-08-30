@@ -65,10 +65,29 @@ public class RequisitionRepository : IRequisitionRepository
     public Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default) =>
         _context.RequisitionFieldValues.AnyAsync(v => v.FieldDefinition!.CategoryId == categoryId, cancellationToken);
 
-    public Task<int> CountNumberedInYearAsync(int year, CancellationToken cancellationToken = default)
+    /// <summary>The highest sequence number ever assigned this year, not a count of currently-existing
+    /// rows - a requisition can be permanently deleted while UnderReview (see DeleteRequisitionCommand),
+    /// which would make a count-based "next sequence" collide with a still-existing higher number the
+    /// moment any requisition earlier in the sequence is removed. Fetches the matching numbers and
+    /// parses them in memory rather than trying to get EF to translate substring+parse to SQL - yearly
+    /// volume is small enough that this is simple and reliably correct.</summary>
+    public async Task<int> GetHighestSequenceInYearAsync(int year, CancellationToken cancellationToken = default)
     {
         var prefix = $"REQ-{year}-";
-        return _context.Requisitions.CountAsync(r => r.RequisitionNumber != null && r.RequisitionNumber.StartsWith(prefix), cancellationToken);
+        var numbers = await _context.Requisitions
+            .Where(r => r.RequisitionNumber != null && r.RequisitionNumber.StartsWith(prefix))
+            .Select(r => r.RequisitionNumber!)
+            .ToListAsync(cancellationToken);
+
+        var highest = 0;
+        foreach (var number in numbers)
+        {
+            if (int.TryParse(number.AsSpan(prefix.Length), out var sequence) && sequence > highest)
+            {
+                highest = sequence;
+            }
+        }
+        return highest;
     }
 
     public Task<Requisition?> FindPotentialDuplicateAsync(
