@@ -52,6 +52,13 @@ public static class RmsDevelopmentSeeder
                 "Manager", "IT Manager", EmploymentType.Permanent, "IT", "Head Office"),
             ("Diana Head (dev stub)", "diana.head@rms.local", UserRole.DepartmentHead,
                 "Manager", "Department Head", EmploymentType.Permanent, "IT", "Head Office"),
+            // Feature 5: two of them, deliberately - rule 1 requires every Procurement Officer to see
+            // every Approved requisition with no per-officer assignment, and the easiest way to prove
+            // that live is to have two and confirm both see an identical, unfiltered queue.
+            ("Pat Procurement (dev stub)", "pat.procurement@rms.local", UserRole.ProcurementOfficer,
+                "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
+            ("Noah Procurement (dev stub)", "noah.procurement@rms.local", UserRole.ProcurementOfficer,
+                "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
         };
 
         foreach (var (fullName, email, role, grade, designation, employmentType, department, location) in demoActors)

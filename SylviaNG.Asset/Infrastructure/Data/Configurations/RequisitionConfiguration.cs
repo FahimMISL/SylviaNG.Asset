@@ -59,5 +59,13 @@ public class RequisitionConfiguration : IEntityTypeConfiguration<Requisition>
             .WithOne(v => v.Requisition!)
             .HasForeignKey(v => v.RequisitionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Feature 5: Npgsql system column, zero migration overhead - the concurrency mechanism for
+        // double-action protection now that Procurement is the first place multiple different users
+        // (any number of Procurement Officers) can legitimately race to act on the same Requisition
+        // row. A violation surfaces as DbUpdateConcurrencyException. UseXminAsConcurrencyToken()
+        // shorthand isn't available in this Npgsql provider version; this shadow-property form is the
+        // documented equivalent (same pattern already used on RequisitionApproval).
+        builder.Property<uint>("xmin").IsRowVersion();
     }
 }

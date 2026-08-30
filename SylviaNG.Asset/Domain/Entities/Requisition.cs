@@ -57,6 +57,9 @@ public class Requisition : AuditableEntity
     /// <summary>Feature 3: 1:1 approval process, present once ResolveAndStart has run for this requisition.</summary>
     public RequisitionApprovalProcess? ApprovalProcess { get; set; }
 
+    /// <summary>Feature 5: procurement/fulfillment ledger - empty until StartProcessing has run.</summary>
+    public List<RequisitionProcurementRecord> ProcurementRecords { get; set; } = new();
+
     /// <summary>Draft -> Submitted. Assigns the requisition number the first time only (a SentBack
     /// resubmission goes through Resubmit instead and keeps its original number).
     /// Returns the new history entry - callers on an already-tracked (pre-existing) Requisition
@@ -259,6 +262,111 @@ public class Requisition : AuditableEntity
 
         var from = Status;
         Status = RequisitionStatus.PartiallyApproved;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 5: Approved/PartiallyApproved -> InProcurement, entered by
+    /// ProcurementService.StartProcessingAsync. See Submit's remarks re: registering the returned
+    /// entry explicitly.</summary>
+    public RequisitionStatusHistory StartProcurement(Guid actorUserId, string actorName, string? actorRole, string? comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.InProcurement))
+        {
+            throw new InvalidOperationException($"Cannot start procurement for a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.InProcurement;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 5: InProcurement -> PartiallyFulfilled, entered by
+    /// ProcurementService.RecordFulfillmentAsync the first time a fulfillment action leaves some
+    /// quantity outstanding. See Submit's remarks re: registering the returned entry explicitly.</summary>
+    public RequisitionStatusHistory PartiallyFulfill(Guid actorUserId, string actorName, string? actorRole, string? comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.PartiallyFulfilled))
+        {
+            throw new InvalidOperationException($"Cannot partially fulfill a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.PartiallyFulfilled;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 5: InProcurement/PartiallyFulfilled -> Fulfilled, entered once every item's
+    /// approved quantity has been fulfilled. See Submit's remarks re: registering the returned entry
+    /// explicitly.</summary>
+    public RequisitionStatusHistory Fulfill(Guid actorUserId, string actorName, string? actorRole, string? comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Fulfilled))
+        {
+            throw new InvalidOperationException($"Cannot mark fulfilled a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.Fulfilled;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 5: Fulfilled/PartiallyFulfilled -> Closed, a Procurement Officer's manual
+    /// "accept as final" action - works from either status since RequisitionStatusRules.CanTransition
+    /// checks the current status generically. See Submit's remarks re: registering the returned entry
+    /// explicitly.</summary>
+    public RequisitionStatusHistory Close(Guid actorUserId, string actorName, string? actorRole, string? comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Closed))
+        {
+            throw new InvalidOperationException($"Cannot close a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.Closed;
         var entry = new RequisitionStatusHistory
         {
             RequisitionId = Id,

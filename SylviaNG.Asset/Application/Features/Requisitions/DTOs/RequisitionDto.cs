@@ -1,5 +1,7 @@
 using RMS.Application.Features.Approvals.DTOs;
+using RMS.Application.Features.Procurement.DTOs;
 using RMS.Domain.Entities;
+using RMS.Domain.Enums;
 
 namespace RMS.Application.Features.Requisitions.DTOs;
 
@@ -60,12 +62,24 @@ public record RequisitionDto(
     /// approvers still cannot edit requisition fields through this DTO. Its CurrentUserCanAct flag is
     /// the one authoritative, delegation-aware "should I show approve/reject/etc. buttons" signal -
     /// see ApprovalProcessDto's remarks.</summary>
-    ApprovalProcessDto? ApprovalProcess)
+    ApprovalProcessDto? ApprovalProcess,
+    /// <summary>Feature 5: null until Status reaches Approved or later. Read-only for the requestor
+    /// (satisfies rule 10's "requester visibility of procurement/fulfillment progress" for free, since
+    /// the requestor already passes GetRequisitionByIdQueryHandler's owner check) - its
+    /// CurrentUserCanProcess flag is the one authoritative "show Start Processing/Record
+    /// Fulfillment/Close buttons" signal, same role as ApprovalProcessDto.CurrentUserCanAct.</summary>
+    ProcurementDto? Procurement)
 {
-    /// <summary>currentUserCanAct defaults false for call sites that don't need it (e.g. the requestor's
-    /// own view of a requisition they just created/listed) - GetRequisitionByIdQueryHandler is the one
-    /// place that computes it properly via ApprovalAuthorizationHelper.IsCurrentUserActionableAsync.</summary>
-    public static RequisitionDto FromEntity(Requisition r, bool currentUserCanAct = false) => new(
+    private static readonly HashSet<RequisitionStatus> ProcurementPipelineStatuses =
+    [
+        RequisitionStatus.Approved, RequisitionStatus.PartiallyApproved, RequisitionStatus.InProcurement,
+        RequisitionStatus.PartiallyFulfilled, RequisitionStatus.Fulfilled, RequisitionStatus.Closed,
+    ];
+
+    /// <summary>currentUserCanAct/currentUserCanProcess default false for call sites that don't need
+    /// them (e.g. the requestor's own view of a requisition they just created/listed) -
+    /// GetRequisitionByIdQueryHandler is the one place that computes them properly.</summary>
+    public static RequisitionDto FromEntity(Requisition r, bool currentUserCanAct = false, bool currentUserCanProcess = false) => new(
         r.Id,
         r.RequisitionNumber,
         r.RequestedByUserId,
@@ -88,7 +102,8 @@ public record RequisitionDto(
         r.FieldValues.Select(RequisitionFieldValueDto.FromEntity).ToList(),
         r.StatusHistory.Select(RequisitionStatusHistoryDto.FromEntity).ToList(),
         r.Attachments.Select(RequisitionAttachmentDto.FromEntity).ToList(),
-        r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct));
+        r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct),
+        ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null);
 }
 
 public record RequisitionSummaryDto(
