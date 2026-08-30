@@ -173,8 +173,26 @@ public static class ReportingCalculations
             .Select(g => new MonthlyTrendPointDto(g.Key.ToString("MMM yyyy"), g.Count()))
             .ToList();
 
+        // Feature 12 (Dashboard): top 5 requesting departments, and every category with at least one
+        // requisition - both computed from this same already-loaded list, not a second query.
+        var topDepartments = requisitions
+            .Where(r => !string.IsNullOrWhiteSpace(r.RequestedByUser?.Department))
+            .GroupBy(r => r.RequestedByUser!.Department!)
+            .Select(g => new DepartmentCountDto(g.Key, g.Count()))
+            .OrderByDescending(d => d.Count)
+            .Take(5)
+            .ToList();
+
+        var categoryBreakdown = requisitions
+            .Where(r => r.Category is not null)
+            .GroupBy(r => r.Category!.Name)
+            .Select(g => new CategoryCountDto(g.Key, g.Count()))
+            .OrderByDescending(c => c.Count)
+            .ToList();
+
         return new ExecutiveSummaryDto(
             total, pending, approved, rejected, fulfilled, pendingApprovals, procurementActive,
-            manpowerCount, manpowerPositions, averageApprovalDays, trend, EligibilityBlockNote);
+            manpowerCount, manpowerPositions, averageApprovalDays, trend, EligibilityBlockNote,
+            topDepartments, categoryBreakdown);
     }
 }

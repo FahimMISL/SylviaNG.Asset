@@ -14,6 +14,8 @@ using RMS.Application.Features.Requisitions.Queries.GetDepartmentRequisitions;
 using RMS.Application.Features.Requisitions.Queries.GetMyRequisitions;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionAttachmentDownload;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionById;
+using RMS.Application.Features.Requisitions.Queries.SearchRequisitions;
+using RMS.Domain.Enums;
 
 namespace RMS.Api.Controllers;
 
@@ -60,6 +62,39 @@ public class RequisitionsController : ControllerBase
     public async Task<ActionResult<RequisitionDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetRequisitionByIdQuery(id), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Feature 11 - server-side, multi-criteria, paginated search. Covers Requisitions, Manpower (via
+    /// freeText matching item/position names, or categoryId for the Manpower category directly), and
+    /// Procurement's pipeline slice (via statuses) - one endpoint, not three. Data scope (own only /
+    /// department / procurement pipeline / unrestricted) is resolved from the caller's role in the
+    /// handler, not supplied by the caller.
+    /// </summary>
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+        [FromQuery] string? freeText,
+        [FromQuery] string? requesterSearch,
+        [FromQuery] List<RequisitionStatus>? statuses,
+        [FromQuery] RequisitionPriority? priority,
+        [FromQuery] string? department,
+        [FromQuery] Guid? categoryId,
+        [FromQuery] Guid? categoryItemId,
+        [FromQuery] DateTime? dateFrom,
+        [FromQuery] DateTime? dateTo,
+        [FromQuery] DateTime? needByFrom,
+        [FromQuery] DateTime? needByTo,
+        [FromQuery] string sortBy = "CreatedAtUtc",
+        [FromQuery] bool sortDescending = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new SearchRequisitionsQuery(
+            freeText, requesterSearch, statuses, priority, department, categoryId, categoryItemId,
+            dateFrom, dateTo, needByFrom, needByTo, sortBy, sortDescending, page, pageSize);
+        var result = await _sender.Send(query, cancellationToken);
         return Ok(result);
     }
 

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using RMS.Application.Common;
+using RMS.Application.Features.Requisitions.Services;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
@@ -52,6 +54,19 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.Category)
             .Include(r => r.RequestedByUser)
             .Where(r => r.CompanyId == companyId && r.RequestedByUser!.Department == department)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>Feature 12: HR Manager's own company-wide data-scoping read - every requisition in the
+    /// "Manpower" category regardless of requester/department, mirroring GetForDepartmentAsync's shape.
+    /// No prior art existed for HR Manager seeing anything beyond their own submissions before this;
+    /// callers must restrict who's allowed to invoke this (see GetManpowerSummaryQueryHandler).</summary>
+    public Task<List<Requisition>> GetManpowerForCompanyAsync(Guid companyId, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Where(r => r.CompanyId == companyId && r.Category != null && EF.Functions.ILike(r.Category.Name, "Manpower"))
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -207,6 +222,112 @@ public class RequisitionRepository : IRequisitionRepository
         return query.OrderByDescending(r => r.CreatedAtUtc).ToListAsync(cancellationToken);
     }
 
+    public async Task<PagedResult<Requisition>> SearchAsync(
+        Guid companyId, Guid? ownerUserId, string? scopeDepartment, bool scopeToPipeline,
+        string? freeText, string? requesterSearch, List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? department,
+        Guid? categoryId, Guid? categoryItemId, DateTime? dateFrom, DateTime? dateTo, DateTime? needByFrom, DateTime? needByTo,
+        string sortBy, bool sortDescending, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        // ASP.NET Core's [FromQuery] model binding produces DateTimeKind.Unspecified for a plain
+        // "yyyy-MM-dd" query string value - Npgsql refuses to write that to a "timestamp with time
+        // zone" column ("only UTC is supported"), which crashed every date-range filter with a 500
+        // before this fix. Every date filter here is always intended as UTC (matches
+        // CreatedAtUtc/NeedByDate's own naming), so it's safe to force the Kind rather than reject it.
+        dateFrom = AsUtc(dateFrom);
+        dateTo = AsUtc(dateTo);
+        needByFrom = AsUtc(needByFrom);
+        needByTo = AsUtc(needByTo);
+
+        var query = _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(s => s.ApprovalWorkflowStage)
+            .Where(r => r.CompanyId == companyId);
+
+        // Data-scope: the same boundary GetAllForUserAsync/GetForDepartmentAsync/GetForProcurementAsync
+        // already enforce, generalized into one query. Exactly one of these three is set by the handler
+        // per role (or none, for SystemAdmin) - never combined.
+        if (ownerUserId.HasValue)
+        {
+            query = query.Where(r => r.RequestedByUserId == ownerUserId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(scopeDepartment))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == scopeDepartment);
+        }
+        else if (scopeToPipeline)
+        {
+            query = query.Where(r => RequisitionAccessHelper.ProcurementPipelineStatuses.Contains(r.Status));
+        }
+
+        if (!string.IsNullOrWhiteSpace(freeText))
+        {
+            query = query.Where(r =>
+                (r.RequisitionNumber != null && EF.Functions.ILike(r.RequisitionNumber, $"%{freeText}%")) ||
+                (r.RequestedByUser != null && EF.Functions.ILike(r.RequestedByUser.FullName, $"%{freeText}%")) ||
+                (r.Category != null && EF.Functions.ILike(r.Category.Name, $"%{freeText}%")) ||
+                r.Items.Any(i => EF.Functions.ILike(i.ItemName, $"%{freeText}%")));
+        }
+        // Separate from freeText - the task's own smart-filter list names Requester independently
+        // (combinable with Status/Department/etc without also matching on category or item names the
+        // way freeText's broader OR would).
+        if (!string.IsNullOrWhiteSpace(requesterSearch))
+        {
+            query = query.Where(r => r.RequestedByUser != null && EF.Functions.ILike(r.RequestedByUser.FullName, $"%{requesterSearch}%"));
+        }
+        if (statuses is { Count: > 0 })
+        {
+            query = query.Where(r => statuses.Contains(r.Status));
+        }
+        if (priority.HasValue)
+        {
+            query = query.Where(r => r.Priority == priority.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(department))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == department);
+        }
+        if (categoryId.HasValue)
+        {
+            query = query.Where(r => r.CategoryId == categoryId.Value);
+        }
+        if (categoryItemId.HasValue)
+        {
+            query = query.Where(r => r.Items.Any(i => i.CategoryItemId == categoryItemId.Value));
+        }
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(r => r.CreatedAtUtc >= dateFrom.Value);
+        }
+        if (dateTo.HasValue)
+        {
+            query = query.Where(r => r.CreatedAtUtc <= dateTo.Value);
+        }
+        if (needByFrom.HasValue)
+        {
+            query = query.Where(r => r.NeedByDate != null && r.NeedByDate >= needByFrom.Value);
+        }
+        if (needByTo.HasValue)
+        {
+            query = query.Where(r => r.NeedByDate != null && r.NeedByDate <= needByTo.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        query = sortBy switch
+        {
+            "RequisitionNumber" => sortDescending ? query.OrderByDescending(r => r.RequisitionNumber) : query.OrderBy(r => r.RequisitionNumber),
+            "NeedByDate" => sortDescending ? query.OrderByDescending(r => r.NeedByDate) : query.OrderBy(r => r.NeedByDate),
+            "Priority" => sortDescending ? query.OrderByDescending(r => r.Priority) : query.OrderBy(r => r.Priority),
+            "Status" => sortDescending ? query.OrderByDescending(r => r.Status) : query.OrderBy(r => r.Status),
+            _ => sortDescending ? query.OrderByDescending(r => r.CreatedAtUtc) : query.OrderBy(r => r.CreatedAtUtc),
+        };
+
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        return new PagedResult<Requisition>(items, totalCount, page, pageSize);
+    }
+
     public void AddAttachment(Requisition requisition, RequisitionAttachment attachment)
     {
         attachment.RequisitionId = requisition.Id;
@@ -232,4 +353,9 @@ public class RequisitionRepository : IRequisitionRepository
 
         _context.RequisitionFieldValues.AddRange(newValues);
     }
+
+    /// <summary>See SearchAsync's remarks - re-tags a query-string-bound DateTime (Kind=Unspecified) as
+    /// UTC without altering its numeric value, since these filters are always intended as UTC.</summary>
+    private static DateTime? AsUtc(DateTime? value) =>
+        value.HasValue && value.Value.Kind != DateTimeKind.Utc ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
 }

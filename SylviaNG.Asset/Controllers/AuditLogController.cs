@@ -29,7 +29,7 @@ public class AuditLogController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<AuditLogEntryDto>>> Get(
+    public async Task<IActionResult> Get(
         [FromQuery] Guid? requisitionId,
         [FromQuery] DateTime? dateFrom,
         [FromQuery] DateTime? dateTo,
@@ -37,10 +37,12 @@ public class AuditLogController : ControllerBase
         [FromQuery] string? actionType,
         [FromQuery] Guid? categoryId,
         [FromQuery] string? department,
-        CancellationToken cancellationToken)
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
         var result = await _sender.Send(
-            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department),
+            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department, page, pageSize),
             cancellationToken);
         return Ok(result);
     }
@@ -57,11 +59,14 @@ public class AuditLogController : ControllerBase
         [FromQuery] string? department,
         CancellationToken cancellationToken)
     {
-        // Reuses the exact same authorized/filtered query as Get() above - the exported file's rows
-        // are guaranteed identical to whatever's on screen for the same filters.
-        var entries = await _sender.Send(
-            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department),
+        // Reuses the exact same authorized/filtered query as Get() above (Feature 11: PageSize set to
+        // "everything" here specifically, since the whole point of exporting is every matching row, not
+        // one page) - the exported file's rows are guaranteed identical to whatever's on screen for the
+        // same filters.
+        var result = await _sender.Send(
+            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department, Page: 1, PageSize: int.MaxValue),
             cancellationToken);
+        var entries = result.Items;
 
         if (string.IsNullOrWhiteSpace(format))
         {

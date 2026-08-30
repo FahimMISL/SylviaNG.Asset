@@ -122,35 +122,41 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.Search, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Search, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Manpower, PermissionAction.View, PermissionAction.Create));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Search, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Procurement, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Search, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Manpower, PermissionAction.View, PermissionAction.Approve));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Search, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Reporting, PermissionAction.View));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Search, PermissionAction.View));
 
         foreach (var (role, module, action) in grants)
         {

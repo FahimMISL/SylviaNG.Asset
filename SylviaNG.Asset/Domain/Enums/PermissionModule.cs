@@ -1,11 +1,11 @@
 namespace RMS.Domain.Enums;
 
 /// <summary>
-/// Feature 10 (US-031): the modules a permission can be granted against. Search and File Management
-/// are deliberately omitted - neither exists as a built feature yet (confirmed via investigation), so
-/// there is nothing to gate; extend this enum when those features exist. Manpower has no separate code
-/// path today (a manpower requisition is a plain Requisition row with a special category) - its row in
-/// the matrix is informational until/unless a later feature gives it its own endpoints.
+/// Feature 10 (US-031): the modules a permission can be granted against. File Management is
+/// deliberately omitted - it doesn't exist as a built feature yet; extend this enum when it does.
+/// Manpower has no separate code path today (a manpower requisition is a plain Requisition row with a
+/// special category) - its row in the matrix is informational until/unless a later feature gives it
+/// its own endpoints. Search (Feature 11) reuses the Requisition model directly, same as Manpower.
 /// </summary>
 public enum PermissionModule
 {
@@ -20,4 +20,5 @@ public enum PermissionModule
     Notifications = 8,
     Rbac = 9,
     Dashboard = 10,
+    Search = 11,
 }
