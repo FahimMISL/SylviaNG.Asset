@@ -38,8 +38,14 @@ public class ApprovalWorkflowEngine
     /// published workflow version for the requisition's (CompanyId, CategoryId), creates the
     /// RequisitionApprovalProcess, transitions Requisition Submitted -> UnderReview via BeginReview,
     /// and starts the first actionable stage (walking past any condition-excluded or fully-self-approval
-    /// stages, auto-skipping the latter).</summary>
-    public async Task ResolveAndStartAsync(
+    /// stages, auto-skipping the latter).
+    ///
+    /// Feature 9: returns the ApprovalQueueEntry/RequisitionApproved notifications this triggered
+    /// instead of sending them itself - NotificationService saves eagerly (same reasoning as
+    /// IAuditLogger), so sending here, mid-way through a still-unsaved unit of work, risks the same
+    /// premature-partial-commit problem Feature 8 had to fix for EligibilityCheckBlocked. The caller
+    /// sends these only after its own SaveChangesAsync succeeds.</summary>
+    public async Task<List<NotificationRequest>> ResolveAndStartAsync(
         Requisition requisition, Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
         var version = await _workflowRepository.GetResolvableVersionAsync(requisition.CompanyId, requisition.CategoryId, cancellationToken)
@@ -65,14 +71,14 @@ public class ApprovalWorkflowEngine
         var beginReviewEntry = requisition.BeginReview(actorUserId, actorName, actorRole);
         _requisitionRepository.AddStatusHistory(beginReviewEntry);
 
-        await AdvanceToNextActionableStageAsync(process, requisition, orderedStages, actorUserId, actorName, actorRole, cancellationToken);
+        return await AdvanceToNextActionableStageAsync(process, requisition, orderedStages, actorUserId, actorName, actorRole, cancellationToken);
     }
 
     /// <summary>Called once every required assignment on a stage has acted (IsStageComplete). If the
     /// completed stage CapturesEstimatedCost, applies the captured value to Requisition.EstimatedCost
     /// first, so any later stage's Cost condition sees the real number. Starts the next actionable
     /// stage, or - if none remain - calls Requisition.Approve().</summary>
-    public async Task AdvanceAfterApprovalAsync(
+    public async Task<List<NotificationRequest>> AdvanceAfterApprovalAsync(
         RequisitionApproval completedApproval, Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
         var process = completedApproval.RequisitionApprovalProcess
@@ -104,7 +110,7 @@ public class ApprovalWorkflowEngine
             .OrderBy(s => s.StageOrder)
             .ToList();
 
-        await AdvanceToNextActionableStageAsync(process, requisition, remainingStages, actorUserId, actorName, actorRole, cancellationToken);
+        return await AdvanceToNextActionableStageAsync(process, requisition, remainingStages, actorUserId, actorName, actorRole, cancellationToken);
     }
 
     /// <summary>Called from UpdateRequisitionCommandHandler's Resubmit-after-SentBack branch (NOT
@@ -113,7 +119,7 @@ public class ApprovalWorkflowEngine
     /// fresh RequisitionApproval instance for that same StageOrder. Every prior instance - including
     /// the SentBack one and any earlier completed stages - stays in history untouched, per the plan's
     /// "do not erase previous approval history" rule.</summary>
-    public async Task ResumeAfterSendBackAsync(
+    public async Task<List<NotificationRequest>> ResumeAfterSendBackAsync(
         Requisition requisition, Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
         var process = await _requisitionApprovalRepository.GetProcessByRequisitionIdAsync(requisition.Id, cancellationToken)
@@ -137,7 +143,7 @@ public class ApprovalWorkflowEngine
         _requisitionRepository.AddStatusHistory(beginReviewEntry);
 
         process.CompletedAtUtc = null;
-        await AdvanceToNextActionableStageAsync(process, requisition, candidateStages, actorUserId, actorName, actorRole, cancellationToken);
+        return await AdvanceToNextActionableStageAsync(process, requisition, candidateStages, actorUserId, actorName, actorRole, cancellationToken);
     }
 
     /// <summary>Parallel-stage completion = every required "slot" satisfied. A slot is normally one
@@ -152,7 +158,7 @@ public class ApprovalWorkflowEngine
             .GroupBy(a => a.RoleFanoutGroupId ?? a.Id)
             .All(group => group.Any(a => a.HasActed));
 
-    private async Task AdvanceToNextActionableStageAsync(
+    private async Task<List<NotificationRequest>> AdvanceToNextActionableStageAsync(
         RequisitionApprovalProcess process, Requisition requisition, List<ApprovalWorkflowStage> candidateStages,
         Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
@@ -168,14 +174,14 @@ public class ApprovalWorkflowEngine
 
         foreach (var stage in candidateStages)
         {
-            var started = await StartStageAsync(process, requisition, stage, costReliablyKnown, cancellationToken);
+            var (started, notifications) = await StartStageAsync(process, requisition, stage, costReliablyKnown, cancellationToken);
             if (started is null || started.Status == RequisitionApprovalStatus.Skipped)
             {
                 continue;
             }
 
             process.CurrentStageOrder = stage.StageOrder;
-            return;
+            return notifications;
         }
 
         // No stage left applicable/actionable - the requisition is fully approved.
@@ -183,18 +189,30 @@ public class ApprovalWorkflowEngine
         _requisitionRepository.AddStatusHistory(approveEntry);
         process.CurrentStageOrder = null;
         process.CompletedAtUtc = DateTime.UtcNow;
+
+        return
+        [
+            new NotificationRequest(
+                requisition.CompanyId, requisition.RequestedByUserId, NotificationEventType.RequisitionApproved, requisition.Id,
+                new Dictionary<string, string>
+                {
+                    ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                    ["ActorName"] = actorName,
+                    ["ActorRole"] = actorRole ?? "N/A",
+                })
+        ];
     }
 
     /// <summary>Creates and persists a RequisitionApproval instance for one stage, or returns null if
     /// the stage's conditions exclude it entirely (no row created for an inapplicable stage). A stage
     /// whose resolved approvers are ALL the requestor is created but immediately marked Skipped with an
     /// AutoSkip action logged, per the plan's self-approval rule.</summary>
-    private async Task<RequisitionApproval?> StartStageAsync(
+    private async Task<(RequisitionApproval? Approval, List<NotificationRequest> Notifications)> StartStageAsync(
         RequisitionApprovalProcess process, Requisition requisition, ApprovalWorkflowStage stage, bool costReliablyKnown, CancellationToken cancellationToken)
     {
         if (!IsStageApplicable(stage, requisition, costReliablyKnown))
         {
-            return null;
+            return (null, []);
         }
 
         var resolvedApprovers = await ResolveApproversAsync(stage, requisition.CompanyId, cancellationToken);
@@ -227,9 +245,29 @@ public class ApprovalWorkflowEngine
                 ActorName = "System",
                 Comment = "Auto-skipped: every configured approver for this stage is the requestor.",
             });
-            return approval;
+            return (approval, []);
         }
 
+        // Feature 9 (US-029): build the ApprovalQueueEntry merge tags once here, then attach the one
+        // varying field (recipient) per assignment below - avoids resolving the requestor/items
+        // repeatedly for a stage with several fanned-out approvers.
+        var requestor = await _userRepository.GetByIdAsync(requisition.RequestedByUserId, cancellationToken);
+        var itemSummary = requisition.Items.Count > 0
+            ? string.Join(", ", requisition.Items.Select(i => $"{i.ItemName} x{i.Quantity}"))
+            : "N/A";
+        var baseMergeTags = new Dictionary<string, string>
+        {
+            ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+            ["Category"] = requisition.Category?.Name ?? "N/A",
+            ["Item"] = itemSummary,
+            ["Quantity"] = requisition.Items.Sum(i => i.Quantity).ToString(),
+            ["Priority"] = requisition.Priority.ToString(),
+            ["RequiredDate"] = requisition.NeedByDate?.ToString("yyyy-MM-dd") ?? "N/A",
+            ["Requestor"] = requestor?.FullName ?? "Unknown",
+            ["Department"] = requestor?.Department ?? "N/A",
+        };
+
+        var notifications = new List<NotificationRequest>();
         foreach (var (userId, isRequired, roleFanoutGroupId) in resolvedApprovers)
         {
             _requisitionApprovalRepository.AddAssignment(new RequisitionApprovalAssignment
@@ -239,9 +277,11 @@ public class ApprovalWorkflowEngine
                 IsRequired = isRequired,
                 RoleFanoutGroupId = roleFanoutGroupId,
             });
+            notifications.Add(new NotificationRequest(
+                requisition.CompanyId, userId, NotificationEventType.ApprovalQueueEntry, requisition.Id, baseMergeTags));
         }
 
-        return approval;
+        return (approval, notifications);
     }
 
     /// <summary>Called by ApproveApprovalCommandHandler right after marking the acting assignment

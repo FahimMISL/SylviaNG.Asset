@@ -15,16 +15,18 @@ public class RecordFulfillmentCommandHandler : IRequestHandler<RecordFulfillment
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ProcurementService _service;
+    private readonly INotificationService _notificationService;
 
     public RecordFulfillmentCommandHandler(
         IRequisitionRepository requisitionRepository, ICurrentUserService currentUser,
-        IAuditLogger auditLogger, IUnitOfWork unitOfWork, ProcurementService service)
+        IAuditLogger auditLogger, IUnitOfWork unitOfWork, ProcurementService service, INotificationService notificationService)
     {
         _requisitionRepository = requisitionRepository;
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
         _service = service;
+        _notificationService = notificationService;
     }
 
     public async Task Handle(RecordFulfillmentCommand request, CancellationToken cancellationToken)
@@ -61,5 +63,19 @@ public class RecordFulfillmentCommandHandler : IRequestHandler<RecordFulfillment
         await _auditLogger.LogAsync(
             "ProcurementFulfillmentRecorded", nameof(Requisition), requisition.Id,
             $"Fulfilled: {fulfilledSummary}; Comment={request.Comment}", cancellationToken);
+
+        // Feature 9 (US-030): Fulfilled is critical (see NotificationEventTypeCatalog); Partially
+        // Fulfilled isn't - requisition.Status was already mutated in-memory by RecordFulfillment above
+        // (Fulfill()/PartiallyFulfill()), so it's the authoritative signal for which one just happened.
+        var eventType = requisition.Status == RequisitionStatus.Fulfilled
+            ? NotificationEventType.RequisitionFulfilled
+            : NotificationEventType.RequisitionPartiallyFulfilled;
+        await _notificationService.NotifyAsync(new NotificationRequest(
+            requisition.CompanyId, requisition.RequestedByUserId, eventType, requisition.Id,
+            new Dictionary<string, string>
+            {
+                ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                ["Comment"] = fulfilledSummary,
+            }), cancellationToken);
     }
 }

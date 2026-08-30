@@ -19,10 +19,12 @@ public class SendBackApprovalCommandHandler : IRequestHandler<SendBackApprovalCo
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
     public SendBackApprovalCommandHandler(
         IRequisitionApprovalRepository requisitionApprovalRepository, IRequisitionRepository requisitionRepository,
-        IApprovalDelegationRepository delegationRepository, ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork)
+        IApprovalDelegationRepository delegationRepository, ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork,
+        INotificationService notificationService)
     {
         _requisitionApprovalRepository = requisitionApprovalRepository;
         _requisitionRepository = requisitionRepository;
@@ -30,6 +32,7 @@ public class SendBackApprovalCommandHandler : IRequestHandler<SendBackApprovalCo
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     public async Task Handle(SendBackApprovalCommand request, CancellationToken cancellationToken)
@@ -82,5 +85,15 @@ public class SendBackApprovalCommandHandler : IRequestHandler<SendBackApprovalCo
         // history for one requisition" actually finds every approval decision made on it.
         await _auditLogger.LogAsync("ApprovalSentBack", nameof(Requisition), requisition.Id,
             $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
+
+        await _notificationService.NotifyAsync(new NotificationRequest(
+            requisition.CompanyId, requisition.RequestedByUserId, NotificationEventType.RequisitionSentBack, requisition.Id,
+            new Dictionary<string, string>
+            {
+                ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                ["ActorName"] = actorName,
+                ["ActorRole"] = actorRole ?? "N/A",
+                ["Comment"] = request.Comment,
+            }), cancellationToken);
     }
 }

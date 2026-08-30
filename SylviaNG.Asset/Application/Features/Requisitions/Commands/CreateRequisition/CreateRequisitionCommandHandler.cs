@@ -18,6 +18,7 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
     private readonly IUnitOfWork _unitOfWork;
     private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
     private readonly PolicyEvaluationService _policyEvaluationService;
+    private readonly INotificationService _notificationService;
 
     public CreateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
@@ -26,7 +27,8 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         IAuditLogger auditLogger,
         IUnitOfWork unitOfWork,
         ApprovalWorkflowEngine approvalWorkflowEngine,
-        PolicyEvaluationService policyEvaluationService)
+        PolicyEvaluationService policyEvaluationService,
+        INotificationService notificationService)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
@@ -35,6 +37,7 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         _unitOfWork = unitOfWork;
         _approvalWorkflowEngine = approvalWorkflowEngine;
         _policyEvaluationService = policyEvaluationService;
+        _notificationService = notificationService;
     }
 
     public async Task<RequisitionDto> Handle(CreateRequisitionCommand request, CancellationToken cancellationToken)
@@ -119,6 +122,8 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             .Select(v => new RequisitionFieldValue { FieldDefinitionId = v.FieldDefinitionId, Value = v.Value })
             .ToList());
 
+        var pendingNotifications = new List<NotificationRequest>();
+
         if (request.Submit)
         {
             var year = DateTime.UtcNow.Year;
@@ -129,7 +134,8 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             // Feature 3: resolves the active workflow for this company/category, creates the approval
             // process, and transitions Submitted -> UnderReview (or straight to Approved if every stage
             // is skipped) - see ApprovalWorkflowEngine.ResolveAndStart.
-            await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken);
+            pendingNotifications.AddRange(
+                await _approvalWorkflowEngine.ResolveAndStartAsync(requisition, userId, actorName, actorRole, cancellationToken));
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -137,6 +143,25 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         await _auditLogger.LogAsync(
             request.Submit ? "RequisitionSubmitted" : "RequisitionDraftSaved",
             nameof(Requisition), requisition.Id, $"CategoryId={requisition.CategoryId}", cancellationToken);
+
+        // Feature 9 (US-028): confirmation to the requestor, sent alongside whatever the approval
+        // engine queued (e.g. the first approver's ApprovalQueueEntry) - all sent only now, after
+        // SaveChangesAsync succeeded, since NotificationService saves eagerly (see the engine's remarks).
+        if (request.Submit)
+        {
+            pendingNotifications.Add(new NotificationRequest(
+                companyId, userId, Domain.Enums.NotificationEventType.RequisitionSubmitted, requisition.Id,
+                new Dictionary<string, string>
+                {
+                    ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
+                    ["Category"] = category.Name,
+                    ["Item"] = resolvedItems.Count > 0 ? string.Join(", ", resolvedItems.Select(i => $"{i.ItemName} x{i.Quantity}")) : "N/A",
+                }));
+        }
+        foreach (var notification in pendingNotifications)
+        {
+            await _notificationService.NotifyAsync(notification, cancellationToken);
+        }
 
         var saved = await _requisitionRepository.GetByIdAsync(requisition.Id, cancellationToken) ?? requisition;
         return RequisitionDto.FromEntity(saved);

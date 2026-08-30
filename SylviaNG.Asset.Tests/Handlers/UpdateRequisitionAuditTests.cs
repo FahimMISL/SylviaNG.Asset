@@ -31,6 +31,7 @@ public class UpdateRequisitionAuditTests
     private readonly Mock<IUserRepository> _userRepository = new();
     private readonly Mock<IApprovalWorkflowRepository> _workflowRepository = new();
     private readonly Mock<IRequisitionApprovalRepository> _requisitionApprovalRepository = new();
+    private readonly Mock<INotificationService> _notificationService = new();
 
     private readonly Guid _companyId = Guid.NewGuid();
     private readonly Guid _categoryId = Guid.NewGuid();
@@ -53,7 +54,7 @@ public class UpdateRequisitionAuditTests
             _workflowRepository.Object, _requisitionApprovalRepository.Object, _requisitionRepository.Object, _userRepository.Object);
         return new UpdateRequisitionCommandHandler(
             _requisitionRepository.Object, _categoryRepository.Object, _currentUser.Object, _auditLogger.Object,
-            _unitOfWork.Object, engine, policyEvaluationService);
+            _unitOfWork.Object, engine, policyEvaluationService, _notificationService.Object);
     }
 
     [Fact]

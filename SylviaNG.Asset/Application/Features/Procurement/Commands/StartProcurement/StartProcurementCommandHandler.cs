@@ -15,16 +15,18 @@ public class StartProcurementCommandHandler : IRequestHandler<StartProcurementCo
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ProcurementService _service;
+    private readonly INotificationService _notificationService;
 
     public StartProcurementCommandHandler(
         IRequisitionRepository requisitionRepository, ICurrentUserService currentUser,
-        IAuditLogger auditLogger, IUnitOfWork unitOfWork, ProcurementService service)
+        IAuditLogger auditLogger, IUnitOfWork unitOfWork, ProcurementService service, INotificationService notificationService)
     {
         _requisitionRepository = requisitionRepository;
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
         _service = service;
+        _notificationService = notificationService;
     }
 
     public async Task Handle(StartProcurementCommand request, CancellationToken cancellationToken)
@@ -50,5 +52,9 @@ public class StartProcurementCommandHandler : IRequestHandler<StartProcurementCo
         }
 
         await _auditLogger.LogAsync("ProcurementStarted", nameof(Requisition), requisition.Id, cancellationToken: cancellationToken);
+
+        await _notificationService.NotifyAsync(new NotificationRequest(
+            requisition.CompanyId, requisition.RequestedByUserId, NotificationEventType.ProcurementStarted, requisition.Id,
+            new Dictionary<string, string> { ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A" }), cancellationToken);
     }
 }

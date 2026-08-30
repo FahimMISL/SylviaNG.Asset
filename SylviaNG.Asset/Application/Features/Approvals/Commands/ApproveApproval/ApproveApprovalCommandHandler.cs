@@ -17,10 +17,12 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ApprovalWorkflowEngine _engine;
+    private readonly INotificationService _notificationService;
 
     public ApproveApprovalCommandHandler(
         IRequisitionApprovalRepository requisitionApprovalRepository, IApprovalDelegationRepository delegationRepository,
-        ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork, ApprovalWorkflowEngine engine)
+        ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork, ApprovalWorkflowEngine engine,
+        INotificationService notificationService)
     {
         _requisitionApprovalRepository = requisitionApprovalRepository;
         _delegationRepository = delegationRepository;
@@ -28,6 +30,7 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
         _engine = engine;
+        _notificationService = notificationService;
     }
 
     public async Task Handle(ApproveApprovalCommand request, CancellationToken cancellationToken)
@@ -74,10 +77,12 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
         });
 
         var stageComplete = ApprovalWorkflowEngine.IsStageComplete(approval);
+        var pendingNotifications = new List<NotificationRequest>();
         if (stageComplete)
         {
             approval.Status = RequisitionApprovalStatus.Approved;
-            await _engine.AdvanceAfterApprovalAsync(approval, userId, actorName, actorRole, cancellationToken);
+            pendingNotifications.AddRange(
+                await _engine.AdvanceAfterApprovalAsync(approval, userId, actorName, actorRole, cancellationToken));
         }
         else if (approval.Status == RequisitionApprovalStatus.Pending)
         {
@@ -96,5 +101,12 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
         // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
         await _auditLogger.LogAsync("ApprovalApproved", nameof(Requisition), approval.RequisitionApprovalProcess!.RequisitionId,
             $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
+
+        // Feature 9 (US-029/US-028): whatever AdvanceAfterApprovalAsync queued - the next stage's
+        // approver(s), or a RequisitionApproved to the requestor if this was the final stage.
+        foreach (var notification in pendingNotifications)
+        {
+            await _notificationService.NotifyAsync(notification, cancellationToken);
+        }
     }
 }
