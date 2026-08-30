@@ -21,8 +21,8 @@ public class EligibilityPolicyRepository : IEligibilityPolicyRepository
             .Include(p => p.Criteria)
             .Include(p => p.ReplacementRule);
 
-    public Task<EligibilityPolicy?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        QueryWithDetails().FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+    public Task<EligibilityPolicy?> GetByIdAsync(Guid companyId, Guid id, CancellationToken cancellationToken = default) =>
+        QueryWithDetails().FirstOrDefaultAsync(p => p.CompanyId == companyId && p.Id == id, cancellationToken);
 
     public Task<List<EligibilityPolicy>> GetAllAsync(Guid companyId, CancellationToken cancellationToken = default) =>
         QueryWithDetails().Where(p => p.CompanyId == companyId).OrderBy(p => p.Name).ToListAsync(cancellationToken);

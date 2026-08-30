@@ -29,12 +29,8 @@ public class UpdateEligibilityPolicyCommandHandler : IRequestHandler<UpdateEligi
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
-        var policy = await _policyRepository.GetByIdAsync(request.PolicyId, cancellationToken)
+        var policy = await _policyRepository.GetByIdAsync(companyId, request.PolicyId, cancellationToken)
             ?? throw new NotFoundException(nameof(EligibilityPolicy), request.PolicyId);
-        if (policy.CompanyId != companyId)
-        {
-            throw new ForbiddenException();
-        }
 
         var category = await _categoryRepository.GetByIdAsync(request.CategoryId, cancellationToken)
             ?? throw new NotFoundException(nameof(RequisitionCategory), request.CategoryId);
@@ -73,7 +69,7 @@ public class UpdateEligibilityPolicyCommandHandler : IRequestHandler<UpdateEligi
 
         await _auditLogger.LogAsync("EligibilityPolicyUpdated", nameof(EligibilityPolicy), policy.Id, $"CategoryId={policy.CategoryId}", cancellationToken);
 
-        var saved = await _policyRepository.GetByIdAsync(policy.Id, cancellationToken) ?? policy;
+        var saved = await _policyRepository.GetByIdAsync(companyId, policy.Id, cancellationToken) ?? policy;
         return EligibilityPolicyDto.FromEntity(saved);
     }
 }

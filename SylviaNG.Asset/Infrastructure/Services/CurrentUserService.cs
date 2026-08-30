@@ -102,5 +102,17 @@ public class CurrentUserService : ICurrentUserService
 
     public string? IpAddress => _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
 
+    public string? Department
+    {
+        get
+        {
+            if (IsAuthenticated)
+            {
+                return User?.FindFirstValue("department");
+            }
+            return FallbackDevUser?.Department;
+        }
+    }
+
     public bool IsInRole(UserRole role) => Role == role;
 }

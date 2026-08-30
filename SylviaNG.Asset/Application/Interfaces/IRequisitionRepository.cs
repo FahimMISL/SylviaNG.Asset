@@ -8,6 +8,10 @@ public interface IRequisitionRepository
     Task<Requisition?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Feature 10 (US-032): DepartmentHead's own data-scoping list - every requisition raised
+    /// by someone in the given department, mirroring GetAllForUserAsync's shape exactly.</summary>
+    Task<List<Requisition>> GetForDepartmentAsync(Guid companyId, string department, CancellationToken cancellationToken = default);
+
     /// <summary>Feature 5: every requisition in the procurement pipeline for this company - no
     /// per-user filter, since every Procurement Officer must see every match (no assignment).</summary>
     Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default);

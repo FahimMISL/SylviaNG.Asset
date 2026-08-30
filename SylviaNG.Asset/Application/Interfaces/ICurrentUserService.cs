@@ -10,5 +10,10 @@ public interface ICurrentUserService
     UserRole? Role { get; }
     Guid? CompanyId { get; }
     string? IpAddress { get; }
+
+    /// <summary>Feature 10 (US-032): DepartmentHead's own data-scoping key - resolved the same way as
+    /// every other claim here (JWT claim when authenticated, dev-stub user lookup otherwise).</summary>
+    string? Department { get; }
+
     bool IsInRole(UserRole role);
 }

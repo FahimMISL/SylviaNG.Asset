@@ -94,5 +94,76 @@ public static class RmsDevelopmentSeeder
         }
 
         await context.SaveChangesAsync();
+
+        await SeedRolePermissionsAsync(context, company.Id);
+    }
+
+    /// <summary>
+    /// Feature 10 (US-031): seeds the permission matrix to match what each role can ALREADY do today
+    /// via the existing inline IsInRole checks (see the plan's Context) - so turning RBAC on doesn't
+    /// change anyone's access on day one, it just makes it visible/editable. Only grants (IsAllowed=true)
+    /// are listed - PermissionService fails closed for any (Role, Module, Action) with no row, so
+    /// everything not listed here is correctly "not allowed" by omission. SystemAdmin has no rows at
+    /// all - it implicitly passes every check (see PermissionService), so seeding its row would be
+    /// inert. Idempotent: only inserts combinations that don't already exist.
+    /// </summary>
+    private static async Task SeedRolePermissionsAsync(RmsDbContext context, Guid companyId)
+    {
+        if (await context.RolePermissions.AnyAsync(p => p.CompanyId == companyId))
+        {
+            return;
+        }
+
+        static (UserRole, PermissionModule, PermissionAction)[] Grants(UserRole role, PermissionModule module, params PermissionAction[] actions) =>
+            actions.Select(a => (role, module, a)).ToArray();
+
+        var grants = new List<(UserRole Role, PermissionModule Module, PermissionAction Action)>();
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.Dashboard, PermissionAction.View));
+
+        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Dashboard, PermissionAction.View));
+
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Manpower, PermissionAction.View, PermissionAction.Create));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Dashboard, PermissionAction.View));
+
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Procurement, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Dashboard, PermissionAction.View));
+
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Manpower, PermissionAction.View, PermissionAction.Approve));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Dashboard, PermissionAction.View));
+
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Reporting, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Dashboard, PermissionAction.View));
+
+        foreach (var (role, module, action) in grants)
+        {
+            context.RolePermissions.Add(new RolePermission
+            {
+                CompanyId = companyId,
+                Role = role,
+                Module = module,
+                Action = action,
+                IsAllowed = true,
+            });
+        }
+
+        await context.SaveChangesAsync();
     }
 }

@@ -26,12 +26,8 @@ public class SetEligibilityPolicyActiveStateCommandHandler : IRequestHandler<Set
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
-        var policy = await _policyRepository.GetByIdAsync(request.PolicyId, cancellationToken)
+        var policy = await _policyRepository.GetByIdAsync(companyId, request.PolicyId, cancellationToken)
             ?? throw new NotFoundException(nameof(EligibilityPolicy), request.PolicyId);
-        if (policy.CompanyId != companyId)
-        {
-            throw new ForbiddenException();
-        }
 
         if (request.IsActive)
         {

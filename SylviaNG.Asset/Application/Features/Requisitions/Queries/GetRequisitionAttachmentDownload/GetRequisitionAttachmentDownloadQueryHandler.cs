@@ -1,5 +1,6 @@
 using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
+using RMS.Application.Features.Requisitions.Services;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
 
@@ -8,13 +9,16 @@ namespace RMS.Application.Features.Requisitions.Queries.GetRequisitionAttachment
 public class GetRequisitionAttachmentDownloadQueryHandler : IRequestHandler<GetRequisitionAttachmentDownloadQuery, AttachmentDownloadResult>
 {
     private readonly IRequisitionRepository _requisitionRepository;
+    private readonly IApprovalDelegationRepository _delegationRepository;
     private readonly IFileStorageService _fileStorage;
     private readonly ICurrentUserService _currentUser;
 
     public GetRequisitionAttachmentDownloadQueryHandler(
-        IRequisitionRepository requisitionRepository, IFileStorageService fileStorage, ICurrentUserService currentUser)
+        IRequisitionRepository requisitionRepository, IApprovalDelegationRepository delegationRepository,
+        IFileStorageService fileStorage, ICurrentUserService currentUser)
     {
         _requisitionRepository = requisitionRepository;
+        _delegationRepository = delegationRepository;
         _fileStorage = fileStorage;
         _currentUser = currentUser;
     }
@@ -26,9 +30,11 @@ public class GetRequisitionAttachmentDownloadQueryHandler : IRequestHandler<GetR
         var requisition = await _requisitionRepository.GetByIdAsync(request.RequisitionId, cancellationToken)
             ?? throw new NotFoundException(nameof(Requisition), request.RequisitionId);
 
-        // Same minimal ownership rule as GetRequisitionByIdQuery - approver/admin visibility
-        // belongs to later features.
-        if (requisition.RequestedByUserId != userId)
+        // Feature 10: same access model as GetRequisitionByIdQuery now - previously owner-only, which
+        // meant a legitimate approver/procurement/department-head viewer got 403 trying to download an
+        // attachment they could already see listed on the detail page.
+        var canAccess = await RequisitionAccessHelper.CanAccessAsync(requisition, userId, _currentUser, _delegationRepository, cancellationToken);
+        if (!canAccess)
         {
             throw new ForbiddenException();
         }

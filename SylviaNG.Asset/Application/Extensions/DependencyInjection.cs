@@ -24,6 +24,8 @@ namespace SylviaNG.Assets.Application.Extensions
                .AddValidatorsFromAssembly(typeof(Program).Assembly);
 
             services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+            // Feature 10 - additive permission-matrix enforcement, see PermissionAuthorizationBehavior's remarks.
+            services.AddTransient(typeof(IPipelineBehavior<,>), typeof(PermissionAuthorizationBehavior<,>));
 
             // Register your services here
             // Adding DI of services

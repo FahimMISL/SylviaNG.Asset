@@ -83,7 +83,7 @@ public class CreateEligibilityPolicyCommandHandler : IRequestHandler<CreateEligi
 
         await _auditLogger.LogAsync("EligibilityPolicyCreated", nameof(EligibilityPolicy), policy.Id, $"CategoryId={policy.CategoryId}", cancellationToken);
 
-        var saved = await _policyRepository.GetByIdAsync(policy.Id, cancellationToken) ?? policy;
+        var saved = await _policyRepository.GetByIdAsync(companyId, policy.Id, cancellationToken) ?? policy;
         return EligibilityPolicyDto.FromEntity(saved);
     }
 }

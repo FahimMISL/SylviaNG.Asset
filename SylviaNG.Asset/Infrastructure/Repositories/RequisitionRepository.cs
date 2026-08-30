@@ -19,6 +19,9 @@ public class RequisitionRepository : IRequisitionRepository
         _context.Requisitions
             .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
             .Include(r => r.Category)
+            // Feature 10: needed for GetRequisitionByIdQueryHandler's DepartmentHead access branch
+            // (requisition.RequestedByUser?.Department).
+            .Include(r => r.RequestedByUser)
             .Include(r => r.CostCenter)
             .Include(r => r.FieldValues).ThenInclude(v => v.FieldDefinition)
             .Include(r => r.StatusHistory.OrderBy(h => h.CreatedAtUtc))
@@ -40,6 +43,15 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.Items)
             .Include(r => r.Category)
             .Where(r => r.CompanyId == companyId && r.RequestedByUserId == userId)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public Task<List<Requisition>> GetForDepartmentAsync(Guid companyId, string department, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Where(r => r.CompanyId == companyId && r.RequestedByUser!.Department == department)
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 

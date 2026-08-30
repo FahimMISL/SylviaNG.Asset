@@ -54,6 +54,9 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
 
+    // Feature 10 - Role-Based Access Control
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Scoped to this namespace only: RmsDbContext shares its assembly with
