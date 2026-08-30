@@ -36,5 +36,33 @@ public static class RmsDevelopmentSeeder
             });
             await context.SaveChangesAsync();
         }
+
+        // Feature 3 (Approval Workflow) needs more than one identity to exercise
+        // submit-as-X / approve-as-Y locally, since there's no real login yet -
+        // see CurrentUserService's X-Dev-User-Id header support. Idempotent by email.
+        var demoActors = new[]
+        {
+            ("Emma Employee (dev stub)", "emma.employee@rms.local", UserRole.Employee),
+            ("Liam Manager (dev stub)", "liam.manager@rms.local", UserRole.LineManager),
+            ("Diana Head (dev stub)", "diana.head@rms.local", UserRole.DepartmentHead),
+        };
+
+        foreach (var (fullName, email, role) in demoActors)
+        {
+            var exists = await context.Users.AnyAsync(u => u.Email == email);
+            if (!exists)
+            {
+                context.Users.Add(new User
+                {
+                    CompanyId = company.Id,
+                    FullName = fullName,
+                    Email = email,
+                    Role = role,
+                    CreatedAtUtc = DateTime.UtcNow,
+                });
+            }
+        }
+
+        await context.SaveChangesAsync();
     }
 }

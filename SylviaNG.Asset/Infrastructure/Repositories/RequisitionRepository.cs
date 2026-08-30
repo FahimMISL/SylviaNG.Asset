@@ -22,6 +22,13 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.FieldValues).ThenInclude(v => v.FieldDefinition)
             .Include(r => r.StatusHistory.OrderBy(h => h.CreatedAtUtc))
             .Include(r => r.Attachments.OrderByDescending(a => a.CreatedAtUtc))
+            // Feature 3: the resolved approval process, if any (created by ApprovalWorkflowEngine on
+            // submit) - needed both by CreateRequisitionCommandHandler's return value and by
+            // GetRequisitionByIdQueryHandler's approver-access extension / ApprovalProcessDto mapping.
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.ApprovalWorkflowVersion!).ThenInclude(v => v.ApprovalWorkflow)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.ApprovalWorkflowStage!).ThenInclude(s => s.Sla)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Assignments).ThenInclude(x => x.AssignedUser)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions).ThenInclude(act => act.PartialDecisions)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default) =>

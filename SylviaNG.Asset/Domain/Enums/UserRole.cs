@@ -10,7 +10,6 @@ public enum UserRole
     Employee = 0,
     LineManager = 1,
     DepartmentHead = 2,
-    FinanceOfficer = 3,
     ProcurementOfficer = 4,
     HrManager = 5,
     StoreOfficer = 6,

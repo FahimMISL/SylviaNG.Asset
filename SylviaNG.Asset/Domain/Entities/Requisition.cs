@@ -54,6 +54,9 @@ public class Requisition : AuditableEntity
     public List<RequisitionStatusHistory> StatusHistory { get; set; } = new();
     public List<RequisitionAttachment> Attachments { get; set; } = new();
 
+    /// <summary>Feature 3: 1:1 approval process, present once ResolveAndStart has run for this requisition.</summary>
+    public RequisitionApprovalProcess? ApprovalProcess { get; set; }
+
     /// <summary>Draft -> Submitted. Assigns the requisition number the first time only (a SentBack
     /// resubmission goes through Resubmit instead and keeps its original number).
     /// Returns the new history entry - callers on an already-tracked (pre-existing) Requisition
@@ -135,6 +138,136 @@ public class Requisition : AuditableEntity
             ActorName = actorName,
             ActorRole = actorRole,
             Comment = responseComment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 3: Submitted -> UnderReview, entered by ApprovalWorkflowEngine.ResolveAndStart as
+    /// part of the same submission that put the requisition into the workflow (actor is the submitter -
+    /// there is no separate human "start review" action). See Submit's remarks re: registering the
+    /// returned entry explicitly.</summary>
+    public RequisitionStatusHistory BeginReview(Guid actorUserId, string actorName, string? actorRole)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.UnderReview))
+        {
+            throw new InvalidOperationException($"Cannot begin review for a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.UnderReview;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 3: UnderReview -> Approved, entered by ApprovalWorkflowEngine.AdvanceAfterApproval
+    /// once every configured stage has completed with no remaining stage. See Submit's remarks re:
+    /// registering the returned entry explicitly.</summary>
+    public RequisitionStatusHistory Approve(Guid actorUserId, string actorName, string? actorRole, string? comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Approved))
+        {
+            throw new InvalidOperationException($"Cannot approve a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.Approved;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 3: UnderReview -> Rejected. Any required rejection at any stage ends the
+    /// requisition immediately - not deferred to the rest of the stage/process. See Submit's remarks re:
+    /// registering the returned entry explicitly.</summary>
+    public RequisitionStatusHistory Reject(Guid actorUserId, string actorName, string? actorRole, string comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Rejected))
+        {
+            throw new InvalidOperationException($"Cannot reject a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.Rejected;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 3: UnderReview -> SentBack. On a later Resubmit (existing method, unchanged) a
+    /// fresh RequisitionApproval instance is created for the same StageOrder; prior instances stay in
+    /// history. See Submit's remarks re: registering the returned entry explicitly.</summary>
+    public RequisitionStatusHistory SendBack(Guid actorUserId, string actorName, string? actorRole, string comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.SentBack))
+        {
+            throw new InvalidOperationException($"Cannot send back a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.SentBack;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
+        };
+        StatusHistory.Add(entry);
+        return entry;
+    }
+
+    /// <summary>Feature 3: UnderReview -> PartiallyApproved. Always terminal - a partial-approve action
+    /// never leaves the process pending further stages. See Submit's remarks re: registering the
+    /// returned entry explicitly.</summary>
+    public RequisitionStatusHistory PartialApprove(Guid actorUserId, string actorName, string? actorRole, string comment)
+    {
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.PartiallyApproved))
+        {
+            throw new InvalidOperationException($"Cannot partially approve a requisition in {Status} status.");
+        }
+
+        var from = Status;
+        Status = RequisitionStatus.PartiallyApproved;
+        var entry = new RequisitionStatusHistory
+        {
+            RequisitionId = Id,
+            FromStatus = from,
+            ToStatus = Status,
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            ActorRole = actorRole,
+            Comment = comment,
         };
         StatusHistory.Add(entry);
         return entry;

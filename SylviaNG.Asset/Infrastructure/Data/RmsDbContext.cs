@@ -25,6 +25,21 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<RequisitionStatusHistory> RequisitionStatusHistories => Set<RequisitionStatusHistory>();
     public DbSet<RequisitionAttachment> RequisitionAttachments => Set<RequisitionAttachment>();
 
+    // Feature 3 - Approval Workflow Management
+    public DbSet<ApprovalWorkflow> ApprovalWorkflows => Set<ApprovalWorkflow>();
+    public DbSet<ApprovalWorkflowVersion> ApprovalWorkflowVersions => Set<ApprovalWorkflowVersion>();
+    public DbSet<ApprovalWorkflowCategoryLink> ApprovalWorkflowCategoryLinks => Set<ApprovalWorkflowCategoryLink>();
+    public DbSet<ApprovalWorkflowStage> ApprovalWorkflowStages => Set<ApprovalWorkflowStage>();
+    public DbSet<WorkflowApprover> WorkflowApprovers => Set<WorkflowApprover>();
+    public DbSet<ApprovalWorkflowStageCondition> ApprovalWorkflowStageConditions => Set<ApprovalWorkflowStageCondition>();
+    public DbSet<ApprovalWorkflowSlaConfiguration> ApprovalWorkflowSlaConfigurations => Set<ApprovalWorkflowSlaConfiguration>();
+    public DbSet<RequisitionApprovalProcess> RequisitionApprovalProcesses => Set<RequisitionApprovalProcess>();
+    public DbSet<RequisitionApproval> RequisitionApprovals => Set<RequisitionApproval>();
+    public DbSet<RequisitionApprovalAssignment> RequisitionApprovalAssignments => Set<RequisitionApprovalAssignment>();
+    public DbSet<RequisitionApprovalAction> RequisitionApprovalActions => Set<RequisitionApprovalAction>();
+    public DbSet<PartialApprovalDecision> PartialApprovalDecisions => Set<PartialApprovalDecision>();
+    public DbSet<ApprovalDelegation> ApprovalDelegations => Set<ApprovalDelegation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Scoped to this namespace only: RmsDbContext shares its assembly with
