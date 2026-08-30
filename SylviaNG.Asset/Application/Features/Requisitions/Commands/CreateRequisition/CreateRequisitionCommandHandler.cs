@@ -1,6 +1,7 @@
 using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
 using RMS.Application.Features.ApprovalWorkflows.Services;
+using RMS.Application.Features.EligibilityPolicies.Services;
 using RMS.Application.Features.Requisitions;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Interfaces;
@@ -16,6 +17,7 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
+    private readonly PolicyEvaluationService _policyEvaluationService;
 
     public CreateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
@@ -23,7 +25,8 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         ICurrentUserService currentUser,
         IAuditLogger auditLogger,
         IUnitOfWork unitOfWork,
-        ApprovalWorkflowEngine approvalWorkflowEngine)
+        ApprovalWorkflowEngine approvalWorkflowEngine,
+        PolicyEvaluationService policyEvaluationService)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
@@ -31,6 +34,7 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
         _approvalWorkflowEngine = approvalWorkflowEngine;
+        _policyEvaluationService = policyEvaluationService;
     }
 
     public async Task<RequisitionDto> Handle(CreateRequisitionCommand request, CancellationToken cancellationToken)
@@ -88,6 +92,21 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
 
         if (request.Submit)
         {
+            // Feature 4: backend-authoritative re-check right before the requisition actually enters
+            // the workflow - never trust an earlier/frontend-only eligibility check. One check per
+            // distinct (CategoryId, CategoryItemId) pair among the resolved items (an item with a null
+            // CategoryItemId is checked at the category level only). Blocks the whole submit on the
+            // first failure - nothing has been saved yet (SaveChangesAsync hasn't run), so throwing
+            // here leaves no partial state.
+            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
+            {
+                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
+                if (!eligibility.IsEligible)
+                {
+                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
+                }
+            }
+
             var year = DateTime.UtcNow.Year;
             var sequence = await _requisitionRepository.CountNumberedInYearAsync(year, cancellationToken) + 1;
             var submitEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);

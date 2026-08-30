@@ -11,5 +11,8 @@ public class CategoryItemConfiguration : IEntityTypeConfiguration<CategoryItem>
         builder.ToTable("CategoryItems");
         builder.HasKey(i => i.Id);
         builder.Property(i => i.Name).IsRequired().HasMaxLength(200);
+
+        // Feature 4: "price integrated type-wise" - nullable, informational only.
+        builder.Property(i => i.Price).HasColumnType("decimal(18,2)");
     }
 }

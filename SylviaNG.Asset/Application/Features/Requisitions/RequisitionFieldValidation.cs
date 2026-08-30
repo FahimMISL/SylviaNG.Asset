@@ -79,10 +79,9 @@ public static class RequisitionFieldValidation
             }
         }
 
-        if (submit && category.IsCostCenterMandatory && costCenterId is null)
-        {
-            failures.Add(new ValidationFailure("CostCenter", "Cost Center is required for this category."));
-        }
+        // Cost Center is hidden from the employee-facing form entirely per product decision - the
+        // category's IsCostCenterMandatory flag stays configurable in admin setup but is no longer
+        // enforced here, since employees have no way to provide a value at all.
 
         if (costCenterId.HasValue && category.CostCenterLinks.All(l => l.CostCenterId != costCenterId.Value))
         {

@@ -86,6 +86,7 @@ public class UpdateCategoryCommandHandler : IRequestHandler<UpdateCategoryComman
             Name = i.Name,
             IsActive = i.IsActive,
             DisplayOrder = index,
+            Price = i.Price,
         }).ToList();
         _categoryRepository.ReplaceItems(category, newItems);
 

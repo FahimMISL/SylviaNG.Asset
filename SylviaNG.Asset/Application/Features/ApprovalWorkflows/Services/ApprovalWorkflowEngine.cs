@@ -156,9 +156,19 @@ public class ApprovalWorkflowEngine
         RequisitionApprovalProcess process, Requisition requisition, List<ApprovalWorkflowStage> candidateStages,
         Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
+        // A Cost condition may only exclude a stage once a real human has actually captured a cost
+        // (some earlier CapturesEstimatedCost stage reached Approved) - otherwise Requisition.EstimatedCost
+        // is still just the unset default, and treating that as "cost below every threshold" lets a
+        // self-approval auto-skip on the capturing stage cascade into skipping every cost-conditional
+        // stage after it too, reaching full approval with zero human review (e.g. a Line Manager
+        // submitting their own request, where they're also the sole configured approver for the
+        // capturing stage). Err toward keeping a human in the loop, not toward auto-approving.
+        var costReliablyKnown = process.StageInstances.Any(
+            s => s.ApprovalWorkflowStage?.CapturesEstimatedCost == true && s.Status == RequisitionApprovalStatus.Approved);
+
         foreach (var stage in candidateStages)
         {
-            var started = await StartStageAsync(process, requisition, stage, cancellationToken);
+            var started = await StartStageAsync(process, requisition, stage, costReliablyKnown, cancellationToken);
             if (started is null || started.Status == RequisitionApprovalStatus.Skipped)
             {
                 continue;
@@ -180,9 +190,9 @@ public class ApprovalWorkflowEngine
     /// whose resolved approvers are ALL the requestor is created but immediately marked Skipped with an
     /// AutoSkip action logged, per the plan's self-approval rule.</summary>
     private async Task<RequisitionApproval?> StartStageAsync(
-        RequisitionApprovalProcess process, Requisition requisition, ApprovalWorkflowStage stage, CancellationToken cancellationToken)
+        RequisitionApprovalProcess process, Requisition requisition, ApprovalWorkflowStage stage, bool costReliablyKnown, CancellationToken cancellationToken)
     {
-        if (!IsStageApplicable(stage, requisition))
+        if (!IsStageApplicable(stage, requisition, costReliablyKnown))
         {
             return null;
         }
@@ -262,12 +272,19 @@ public class ApprovalWorkflowEngine
     /// <summary>Cost + Category only. No condition rows = always included. Multiple condition rows on
     /// one stage are AND'd - the conservative reading absent an explicit spec for combining them, so a
     /// stage never fires on a partial match the admin didn't configure.</summary>
-    private static bool IsStageApplicable(ApprovalWorkflowStage stage, Requisition requisition)
+    private static bool IsStageApplicable(ApprovalWorkflowStage stage, Requisition requisition, bool costReliablyKnown)
     {
         foreach (var condition in stage.Conditions)
         {
             if (condition.ConditionType == ApprovalConditionType.Cost)
             {
+                if (!costReliablyKnown)
+                {
+                    // Cost was never actually captured (the capturing stage was skipped or excluded) -
+                    // don't let an unset/stale EstimatedCost silently exclude this stage.
+                    continue;
+                }
+
                 if (condition.MinCost.HasValue && requisition.EstimatedCost < condition.MinCost.Value)
                 {
                     return false;

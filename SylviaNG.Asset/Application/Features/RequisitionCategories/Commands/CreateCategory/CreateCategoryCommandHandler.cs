@@ -58,6 +58,7 @@ public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryComman
             Name = i.Name,
             IsActive = i.IsActive,
             DisplayOrder = index,
+            Price = i.Price,
         }).ToList();
 
         if (request.CostCenterIds.Count > 0)

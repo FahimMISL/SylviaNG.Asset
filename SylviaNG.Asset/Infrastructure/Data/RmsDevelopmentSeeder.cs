@@ -40,14 +40,21 @@ public static class RmsDevelopmentSeeder
         // Feature 3 (Approval Workflow) needs more than one identity to exercise
         // submit-as-X / approve-as-Y locally, since there's no real login yet -
         // see CurrentUserService's X-Dev-User-Id header support. Idempotent by email.
+        // Feature 4: each also gets sensible sample eligibility attributes (Grade/Designation/
+        // EmploymentType/Department/Location) so eligibility policies are actually testable locally -
+        // Liam and Diana sit at a higher Grade than Emma so a "Grade: Manager and above" style policy
+        // has something real to differentiate against.
         var demoActors = new[]
         {
-            ("Emma Employee (dev stub)", "emma.employee@rms.local", UserRole.Employee),
-            ("Liam Manager (dev stub)", "liam.manager@rms.local", UserRole.LineManager),
-            ("Diana Head (dev stub)", "diana.head@rms.local", UserRole.DepartmentHead),
+            ("Emma Employee (dev stub)", "emma.employee@rms.local", UserRole.Employee,
+                "Officer", "Software Engineer", EmploymentType.Permanent, "IT", "Head Office"),
+            ("Liam Manager (dev stub)", "liam.manager@rms.local", UserRole.LineManager,
+                "Manager", "IT Manager", EmploymentType.Permanent, "IT", "Head Office"),
+            ("Diana Head (dev stub)", "diana.head@rms.local", UserRole.DepartmentHead,
+                "Manager", "Department Head", EmploymentType.Permanent, "IT", "Head Office"),
         };
 
-        foreach (var (fullName, email, role) in demoActors)
+        foreach (var (fullName, email, role, grade, designation, employmentType, department, location) in demoActors)
         {
             var exists = await context.Users.AnyAsync(u => u.Email == email);
             if (!exists)
@@ -58,6 +65,11 @@ public static class RmsDevelopmentSeeder
                     FullName = fullName,
                     Email = email,
                     Role = role,
+                    Grade = grade,
+                    Designation = designation,
+                    EmploymentType = employmentType,
+                    Department = department,
+                    Location = location,
                     CreatedAtUtc = DateTime.UtcNow,
                 });
             }

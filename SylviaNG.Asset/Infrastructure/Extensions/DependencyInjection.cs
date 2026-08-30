@@ -114,6 +114,9 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<INotificationService, NoOpNotificationService>();
             services.AddHostedService<SlaBreachEscalationService>();
 
+            // Feature 4 - Eligibility & Policy Management
+            services.AddScoped<IEligibilityPolicyRepository, EligibilityPolicyRepository>();
+
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();
             services.AddScoped<RMS.Application.Interfaces.IUnitOfWork>(sp => sp.GetRequiredService<RmsDbContext>());

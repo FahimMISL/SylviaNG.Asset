@@ -1,6 +1,7 @@
 using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
 using RMS.Application.Features.ApprovalWorkflows.Services;
+using RMS.Application.Features.EligibilityPolicies.Services;
 using RMS.Application.Features.Requisitions;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Interfaces;
@@ -17,6 +18,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ApprovalWorkflowEngine _approvalWorkflowEngine;
+    private readonly PolicyEvaluationService _policyEvaluationService;
 
     public UpdateRequisitionCommandHandler(
         IRequisitionRepository requisitionRepository,
@@ -24,7 +26,8 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         ICurrentUserService currentUser,
         IAuditLogger auditLogger,
         IUnitOfWork unitOfWork,
-        ApprovalWorkflowEngine approvalWorkflowEngine)
+        ApprovalWorkflowEngine approvalWorkflowEngine,
+        PolicyEvaluationService policyEvaluationService)
     {
         _requisitionRepository = requisitionRepository;
         _categoryRepository = categoryRepository;
@@ -32,6 +35,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
         _approvalWorkflowEngine = approvalWorkflowEngine;
+        _policyEvaluationService = policyEvaluationService;
     }
 
     public async Task<RequisitionDto> Handle(UpdateRequisitionCommand request, CancellationToken cancellationToken)
@@ -91,6 +95,20 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
 
         if (request.Submit)
         {
+            // Feature 4: same backend-authoritative re-check as CreateRequisitionCommandHandler - this
+            // is the "Save Draft, then Submit later" / SentBack-resubmit path, so it needs its own
+            // check too (the same "two submission paths" class of gap Feature 3 had to fix in both
+            // handlers). Nothing has been saved yet at this point, so throwing here leaves no partial
+            // state.
+            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
+            {
+                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
+                if (!eligibility.IsEligible)
+                {
+                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
+                }
+            }
+
             RequisitionStatusHistory transitionEntry;
             if (isAmendment)
             {
@@ -152,7 +170,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         }
 
         Track(nameof(Requisition.Priority), before.Priority, after.Priority);
-        Track(nameof(Requisition.NeedByDate), before.NeedByDate.Date, after.NeedByDate.Date);
+        Track(nameof(Requisition.NeedByDate), before.NeedByDate?.Date, after.NeedByDate?.Date);
         Track(nameof(Requisition.EstimatedCost), before.EstimatedCost, after.EstimatedCost);
         Track(nameof(Requisition.Justification), before.Justification, after.Justification);
         Track(nameof(Requisition.CostCenterId), before.CostCenterId, after.CostCenterId);

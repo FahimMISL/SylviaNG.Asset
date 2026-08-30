@@ -10,4 +10,8 @@ public class CategoryItem
     public string Name { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public int DisplayOrder { get; set; }
+
+    /// <summary>Feature 4: "price integrated type-wise" per the spec - nullable, informational only.
+    /// No budget/finance validation is built against this; it's just recorded on the item.</summary>
+    public decimal? Price { get; set; }
 }

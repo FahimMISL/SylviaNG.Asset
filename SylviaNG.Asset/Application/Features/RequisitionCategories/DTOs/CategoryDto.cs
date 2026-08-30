@@ -2,9 +2,9 @@ using RMS.Domain.Entities;
 
 namespace RMS.Application.Features.RequisitionCategories.DTOs;
 
-public record CategoryItemDto(Guid Id, string Name, bool IsActive)
+public record CategoryItemDto(Guid Id, string Name, bool IsActive, decimal? Price)
 {
-    public static CategoryItemDto FromEntity(CategoryItem i) => new(i.Id, i.Name, i.IsActive);
+    public static CategoryItemDto FromEntity(CategoryItem i) => new(i.Id, i.Name, i.IsActive, i.Price);
 }
 
 public record CategoryDto(

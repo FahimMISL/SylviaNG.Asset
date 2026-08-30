@@ -2,6 +2,7 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using MediatR;
 using RMS.Application.Features.ApprovalWorkflows.Services;
+using RMS.Application.Features.EligibilityPolicies.Services;
 using SylviaNG.Assets.Application.Interfaces.Services;
 using SylviaNG.Assets.Application.Services;
 using System.Reflection;
@@ -33,6 +34,9 @@ namespace SylviaNG.Assets.Application.Extensions
 
             // Feature 3 - Approval Workflow Management
             services.AddScoped<ApprovalWorkflowEngine>();
+
+            // Feature 4 - Eligibility & Policy Management
+            services.AddScoped<PolicyEvaluationService>();
 
             // Provide access to HttpContext for request metadata enrichment
             services.AddHttpContextAccessor();

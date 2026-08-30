@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
+using RMS.Domain.Enums;
 using RMS.Infrastructure.Data;
 
 namespace RMS.Infrastructure.Repositories;
@@ -57,7 +58,7 @@ public class RequisitionRepository : IRequisitionRepository
             .Include(r => r.Items)
             .Where(r => r.RequestedByUserId == userId
                 && r.CategoryId == categoryId
-                && r.NeedByDate.Date == needByDate.Date
+                && r.NeedByDate.HasValue && r.NeedByDate.Value.Date == needByDate.Date
                 && r.CreatedAtUtc >= sinceUtc
                 // "You may have already SUBMITTED a similar request" only makes sense against
                 // something that was actually submitted - matching a Draft (which has no
@@ -67,7 +68,22 @@ public class RequisitionRepository : IRequisitionRepository
             .OrderByDescending(r => r.CreatedAtUtc)
             .FirstOrDefaultAsync(r => r.Items.Sum(i => i.Quantity) == totalQuantity, cancellationToken);
 
+    public Task<DateTime?> GetMostRecentApprovedTransitionUtcAsync(
+        Guid userId, Guid categoryId, Guid? categoryItemId, List<RequisitionStatus> qualifyingStatuses,
+        CancellationToken cancellationToken = default) =>
+        _context.RequisitionStatusHistories
+            .Where(h => (h.ToStatus == RequisitionStatus.Approved || h.ToStatus == RequisitionStatus.PartiallyApproved)
+                && h.Requisition!.RequestedByUserId == userId
+                && h.Requisition.CategoryId == categoryId
+                && h.Requisition.Items.Any(i => i.CategoryItemId == categoryItemId)
+                && qualifyingStatuses.Contains(h.Requisition.Status))
+            .OrderByDescending(h => h.CreatedAtUtc)
+            .Select(h => (DateTime?)h.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public void Add(Requisition requisition) => _context.Requisitions.Add(requisition);
+
+    public void Remove(Requisition requisition) => _context.Requisitions.Remove(requisition);
 
     public void ReplaceItems(Requisition requisition, List<RequisitionItem> newItems)
     {

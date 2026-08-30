@@ -40,6 +40,11 @@ public class RmsDbContext : DbContext, IUnitOfWork
     public DbSet<PartialApprovalDecision> PartialApprovalDecisions => Set<PartialApprovalDecision>();
     public DbSet<ApprovalDelegation> ApprovalDelegations => Set<ApprovalDelegation>();
 
+    // Feature 4 - Eligibility & Policy Management
+    public DbSet<EligibilityPolicy> EligibilityPolicies => Set<EligibilityPolicy>();
+    public DbSet<EligibilityPolicyCriterion> EligibilityPolicyCriteria => Set<EligibilityPolicyCriterion>();
+    public DbSet<EligibilityPolicyReplacementRule> EligibilityPolicyReplacementRules => Set<EligibilityPolicyReplacementRule>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Scoped to this namespace only: RmsDbContext shares its assembly with
