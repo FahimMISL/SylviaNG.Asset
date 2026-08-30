@@ -51,6 +51,15 @@ public class RecordFulfillmentCommandHandler : IRequestHandler<RecordFulfillment
             throw new ConflictException("This requisition was already updated by someone else. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ProcurementFulfillmentRecorded", nameof(Requisition), requisition.Id, cancellationToken: cancellationToken);
+        // Feature 8: item names + quantities recorded this action, so the audit trail shows exactly
+        // what was fulfilled, not just that "something" was.
+        var itemNames = requisition.Items.ToDictionary(i => i.Id, i => i.ItemName);
+        var fulfilledSummary = string.Join(", ", request.Items
+            .Where(i => i.Quantity > 0)
+            .Select(i => $"{itemNames.GetValueOrDefault(i.RequisitionItemId, "Unknown item")} x{i.Quantity}"));
+
+        await _auditLogger.LogAsync(
+            "ProcurementFulfillmentRecorded", nameof(Requisition), requisition.Id,
+            $"Fulfilled: {fulfilledSummary}; Comment={request.Comment}", cancellationToken);
     }
 }

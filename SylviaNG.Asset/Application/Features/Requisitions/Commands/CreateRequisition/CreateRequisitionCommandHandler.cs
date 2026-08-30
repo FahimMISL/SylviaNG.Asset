@@ -83,6 +83,35 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
 
         var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
 
+        if (request.Submit)
+        {
+            // Feature 4: backend-authoritative re-check right before the requisition actually enters
+            // the workflow - never trust an earlier/frontend-only eligibility check. One check per
+            // distinct (CategoryId, CategoryItemId) pair among the resolved items (an item with a null
+            // CategoryItemId is checked at the category level only). Blocks the whole submit on the
+            // first failure - deliberately runs before anything is added to the tracked DbContext
+            // (see below), so throwing here leaves no partial state AND so Feature 8's audit-blocked
+            // log entry doesn't eagerly persist a half-built requisition: IAuditLogger.LogAsync calls
+            // SaveChangesAsync itself immediately, which would otherwise commit whatever's already
+            // pending on this same context.
+            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
+            {
+                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
+                if (!eligibility.IsEligible)
+                {
+                    // Feature 8: the one genuinely missing audit point - a blocked submission
+                    // previously left zero trace anywhere. requisition.Id is a real, already-generated
+                    // GUID (AuditableEntity assigns it at construction) even though this specific
+                    // Requisition row itself never gets saved - it still uniquely correlates this one
+                    // blocked attempt.
+                    await _auditLogger.LogAsync(
+                        "EligibilityCheckBlocked", nameof(Requisition), requisition.Id,
+                        $"CategoryItemId={categoryItemId}; Reason={eligibility.Reason}", cancellationToken);
+                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
+                }
+            }
+        }
+
         _requisitionRepository.Add(requisition);
         _requisitionRepository.AddStatusHistory(draftEntry);
         _requisitionRepository.ReplaceItems(requisition, resolvedItems);
@@ -92,21 +121,6 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
 
         if (request.Submit)
         {
-            // Feature 4: backend-authoritative re-check right before the requisition actually enters
-            // the workflow - never trust an earlier/frontend-only eligibility check. One check per
-            // distinct (CategoryId, CategoryItemId) pair among the resolved items (an item with a null
-            // CategoryItemId is checked at the category level only). Blocks the whole submit on the
-            // first failure - nothing has been saved yet (SaveChangesAsync hasn't run), so throwing
-            // here leaves no partial state.
-            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
-            {
-                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
-                if (!eligibility.IsEligible)
-                {
-                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
-                }
-            }
-
             var year = DateTime.UtcNow.Year;
             var sequence = await _requisitionRepository.GetHighestSequenceInYearAsync(year, cancellationToken) + 1;
             var submitEntry = requisition.Submit(RequisitionNumberFormatter.Format(year, sequence), userId, actorName, actorRole);

@@ -83,7 +83,8 @@ public class DelegateApprovalActionCommandHandler : IRequestHandler<DelegateAppr
             throw new ConflictException("This approval was already acted on. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalDelegated", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={approval.RequisitionApprovalProcess!.RequisitionId}, DelegatedTo={request.DelegateToUserId}", cancellationToken);
+        // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
+        await _auditLogger.LogAsync("ApprovalDelegated", nameof(Requisition), approval.RequisitionApprovalProcess!.RequisitionId,
+            $"DelegatedTo={request.DelegateToUserId}; Comment={request.Comment}", cancellationToken);
     }
 }

@@ -67,7 +67,8 @@ public class EscalateApprovalCommandHandler : IRequestHandler<EscalateApprovalCo
             throw new ConflictException("This approval was already acted on. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalEscalated", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={approval.RequisitionApprovalProcess.RequisitionId}", cancellationToken);
+        // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
+        await _auditLogger.LogAsync("ApprovalEscalated", nameof(Requisition), approval.RequisitionApprovalProcess.RequisitionId,
+            $"Comment={request.Comment}", cancellationToken);
     }
 }

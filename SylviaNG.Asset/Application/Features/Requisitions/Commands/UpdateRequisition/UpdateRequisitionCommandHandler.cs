@@ -70,10 +70,34 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
 
         RequisitionFieldValidation.EnsureValid(category, request.FieldValues, request.CostCenterId, request.ProjectCode, request.Submit);
 
+        var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
+
+        if (request.Submit)
+        {
+            // Feature 4: same backend-authoritative re-check as CreateRequisitionCommandHandler - this
+            // is the "Save Draft, then Submit later" / SentBack-resubmit path, so it needs its own
+            // check too (the same "two submission paths" class of gap Feature 3 had to fix in both
+            // handlers). Deliberately runs before requisition is mutated at all (see below) - nothing
+            // has changed on the tracked entity yet, so throwing here leaves no partial state AND
+            // Feature 8's audit-blocked log entry (which eagerly calls SaveChangesAsync itself) can't
+            // accidentally commit an in-progress edit.
+            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
+            {
+                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
+                if (!eligibility.IsEligible)
+                {
+                    await _auditLogger.LogAsync(
+                        "EligibilityCheckBlocked", nameof(Requisition), requisition.Id,
+                        $"CategoryItemId={categoryItemId}; Reason={eligibility.Reason}", cancellationToken);
+                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
+                }
+            }
+        }
+
         // FR-RR-010: field-by-field before -> after diff for the amendment audit trail. Captured
         // before mutation; only meaningful (and only logged) for an actual SentBack amendment -
         // a plain Draft edit already gets its own "RequisitionDraftSaved"/"RequisitionSubmitted" entry.
-        var diff = isAmendment ? BuildDiff(requisition, request) : null;
+        var diff = isAmendment ? BuildDiff(requisition, request, category) : null;
 
         requisition.CategoryId = request.CategoryId;
         requisition.CategoryVersionNumber = category.CurrentVersionNumber;
@@ -87,7 +111,6 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         requisition.UpdatedByUserId = userId;
         requisition.UpdatedAtUtc = DateTime.UtcNow;
 
-        var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
         _requisitionRepository.ReplaceItems(requisition, resolvedItems);
         _requisitionRepository.ReplaceFieldValues(requisition, request.FieldValues
             .Select(v => new RequisitionFieldValue { FieldDefinitionId = v.FieldDefinitionId, Value = v.Value })
@@ -95,20 +118,6 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
 
         if (request.Submit)
         {
-            // Feature 4: same backend-authoritative re-check as CreateRequisitionCommandHandler - this
-            // is the "Save Draft, then Submit later" / SentBack-resubmit path, so it needs its own
-            // check too (the same "two submission paths" class of gap Feature 3 had to fix in both
-            // handlers). Nothing has been saved yet at this point, so throwing here leaves no partial
-            // state.
-            foreach (var categoryItemId in resolvedItems.Select(i => i.CategoryItemId).Distinct())
-            {
-                var eligibility = await _policyEvaluationService.CheckAsync(userId, request.CategoryId, categoryItemId, cancellationToken);
-                if (!eligibility.IsEligible)
-                {
-                    throw new ConflictException(eligibility.Reason ?? "You are not currently eligible to request this item.");
-                }
-            }
-
             RequisitionStatusHistory transitionEntry;
             if (isAmendment)
             {
@@ -157,7 +166,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         return RequisitionDto.FromEntity(saved);
     }
 
-    private static string BuildDiff(Requisition before, UpdateRequisitionCommand after)
+    private static string BuildDiff(Requisition before, UpdateRequisitionCommand after, RequisitionCategory category)
     {
         var changes = new List<string>();
 
@@ -175,6 +184,22 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         Track(nameof(Requisition.Justification), before.Justification, after.Justification);
         Track(nameof(Requisition.CostCenterId), before.CostCenterId, after.CostCenterId);
         Track(nameof(Requisition.ProjectCode), before.ProjectCode, after.ProjectCode);
+
+        // Feature 8: item/quantity changes weren't tracked at all before - the spec's own examples
+        // ("Category/Type changed", "Quantity changed") name this explicitly. before.Items still
+        // holds the pre-amendment list at this point (ReplaceItems runs after BuildDiff is called);
+        // after.Items is resolved against the category's Items to get real names, same lookup
+        // RequisitionFieldValidation.ResolveItems itself uses.
+        var beforeSummary = string.Join(", ", before.Items.Select(i => $"{i.ItemName} x{i.Quantity}"));
+        var afterSummary = string.Join(", ", after.Items.Select(i =>
+        {
+            var name = category.Items.FirstOrDefault(ci => ci.Id == i.CategoryItemId)?.Name ?? "Unknown item";
+            return $"{name} x{i.Quantity}";
+        }));
+        if (!string.Equals(beforeSummary, afterSummary, StringComparison.Ordinal))
+        {
+            changes.Add($"Items: '{beforeSummary}' -> '{afterSummary}'");
+        }
 
         return string.Join("; ", changes);
     }

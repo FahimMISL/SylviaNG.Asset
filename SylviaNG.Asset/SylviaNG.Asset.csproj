@@ -12,6 +12,7 @@
   <ItemGroup>
 
     <!-- Multi-Tenancy Dependencies -->
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
     <PackageReference Include="Finbuckle.MultiTenant.AspNetCore" Version="10.0.4" />
     <PackageReference Include="Finbuckle.MultiTenant.EntityFrameworkCore" Version="10.0.4" />
 

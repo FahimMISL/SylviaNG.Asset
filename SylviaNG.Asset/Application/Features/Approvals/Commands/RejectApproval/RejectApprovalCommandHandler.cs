@@ -81,7 +81,8 @@ public class RejectApprovalCommandHandler : IRequestHandler<RejectApprovalComman
             throw new ConflictException("This approval was already acted on. Please refresh.");
         }
 
-        await _auditLogger.LogAsync("ApprovalRejected", nameof(RequisitionApproval), approval.Id,
-            $"RequisitionId={requisition.Id}, StageOrder={approval.StageOrder}", cancellationToken);
+        // Feature 8: anchored to the requisition itself, see SendBackApprovalCommandHandler's remarks.
+        await _auditLogger.LogAsync("ApprovalRejected", nameof(Requisition), requisition.Id,
+            $"StageOrder={approval.StageOrder}; Comment={request.Comment}", cancellationToken);
     }
 }

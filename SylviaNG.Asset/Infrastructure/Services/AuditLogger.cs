@@ -28,6 +28,7 @@ public class AuditLogger : IAuditLogger
     {
         _context.AuditLogs.Add(new AuditLog
         {
+            CompanyId = _currentUser.CompanyId,
             ActorUserId = actorUserId,
             ActorName = actorName,
             ActorRole = actorRole,

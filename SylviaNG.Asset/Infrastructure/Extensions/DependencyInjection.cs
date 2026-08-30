@@ -117,6 +117,9 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             // Feature 4 - Eligibility & Policy Management
             services.AddScoped<IEligibilityPolicyRepository, EligibilityPolicyRepository>();
 
+            // Feature 8 - Audit & Compliance
+            services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();
             services.AddScoped<RMS.Application.Interfaces.IUnitOfWork>(sp => sp.GetRequiredService<RmsDbContext>());
