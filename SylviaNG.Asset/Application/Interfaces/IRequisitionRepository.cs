@@ -63,4 +63,15 @@ public interface IRequisitionRepository
     /// DbSet - see AddStatusHistory's remarks for why this bypasses the tracked parent's navigation
     /// collection.</summary>
     void AddProcurementRecord(RequisitionProcurementRecord record);
+
+    /// <summary>Feature 7: every requisition matching the given (all-optional) filters, for the
+    /// Operational Report and the Executive Summary (called with every filter null - a full,
+    /// unfiltered snapshot). Loads Items+CategoryItem, Category, RequestedByUser, StatusHistory, and
+    /// ApprovalProcess+StageInstances+ApprovalWorkflowStage - everything ReportingCalculations needs,
+    /// nothing procurement-specific since procurement/approval status here is derived purely from
+    /// Requisition.Status, not from RequisitionProcurementRecords.</summary>
+    Task<List<Requisition>> GetForReportingAsync(
+        Guid companyId, DateTime? dateFrom, DateTime? dateTo, string? department, Guid? categoryId, Guid? categoryItemId,
+        List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? requesterSearch,
+        CancellationToken cancellationToken = default);
 }
