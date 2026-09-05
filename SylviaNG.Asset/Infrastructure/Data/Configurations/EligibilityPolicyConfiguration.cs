@@ -21,6 +21,10 @@ public class EligibilityPolicyConfiguration : IEntityTypeConfiguration<Eligibili
         // DependencyInjection.NormalizeDatabaseProvider). Plain non-unique index for lookup speed.
         builder.HasIndex(p => new { p.CompanyId, p.CategoryId, p.CategoryItemId });
 
+        // Trash: every normal query filters IsDeleted=false, so a company's trash view (and the purge
+        // job's cross-company sweep) both benefit from an index on the flag actually driving them.
+        builder.HasIndex(p => new { p.IsDeleted, p.DeletedAtUtc });
+
         builder.HasOne(p => p.Company)
             .WithMany()
             .HasForeignKey(p => p.CompanyId)

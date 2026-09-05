@@ -26,6 +26,7 @@ public class AuditLogRepository : IAuditLogRepository
         string? department,
         int page,
         int pageSize,
+        bool sortDescending = true,
         CancellationToken cancellationToken = default)
     {
         // Feature 8: AuditLog.CompanyId is captured directly at write time (AuditLogger.WriteAsync),
@@ -79,7 +80,10 @@ public class AuditLogRepository : IAuditLogRepository
             query = query.Where(a => a.ActionType == actionType);
         }
 
-        query = query.OrderByDescending(a => a.TimestampUtc);
+        // Feature 8.2: Timestamp (UTC) is the only sortable column on this screen - a real, server-side
+        // sort on the actual TimestampUtc value (not the formatted display text), toggled by the
+        // frontend's second click. Every other filter above is unaffected by this.
+        query = sortDescending ? query.OrderByDescending(a => a.TimestampUtc) : query.OrderBy(a => a.TimestampUtc);
 
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);

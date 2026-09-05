@@ -47,7 +47,7 @@ public class ApprovalsController : ControllerBase
     [HttpPost("{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, ApproveApprovalRequestBody body, CancellationToken cancellationToken)
     {
-        await _sender.Send(new ApproveApprovalCommand(id, body.Comment, body.EstimatedCost), cancellationToken);
+        await _sender.Send(new ApproveApprovalCommand(id, body.Comment), cancellationToken);
         return NoContent();
     }
 

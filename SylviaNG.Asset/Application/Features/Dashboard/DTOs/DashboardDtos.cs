@@ -8,6 +8,9 @@ public record PositionQuantityDto(string PositionName, int Quantity);
 /// multiple independent requisitions just because it has multiple Position x Quantity lines.</summary>
 public record ManpowerRequisitionSummaryDto(
     Guid Id, string? RequisitionNumber, string RequesterName, string Status, DateTime CreatedAtUtc,
+    /// <summary>Null until actually submitted (still a Draft) - reuses Requisition.SubmittedAtUtc,
+    /// the same field the detail page's own "Submitted" field reads.</summary>
+    DateTime? SubmittedAtUtc,
     int TotalQuantity, List<PositionQuantityDto> Positions);
 
 public record ManpowerSummaryDto(

@@ -60,8 +60,10 @@ public class UpdatePermissionMatrixTests
         await BuildHandler().Handle(command, CancellationToken.None);
 
         _rolePermissionRepository.Verify(r => r.Add(It.Is<RolePermission>(p => p.IsAllowed && p.Module == PermissionModule.EligibilityPolicy)), Times.Once);
+        // Feature 8.3: target names the affected role, so "which role changed" is visible in the
+        // audit trail without having to parse Details.
         _auditLogger.Verify(
-            a => a.LogAsync("PermissionMatrixUpdated", nameof(RolePermission), Guid.Empty, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            a => a.LogAsync("PermissionMatrixUpdated", nameof(RolePermission), Guid.Empty, It.IsAny<string?>(), It.IsAny<CancellationToken>(), "Employee"),
             Times.Once);
     }
 

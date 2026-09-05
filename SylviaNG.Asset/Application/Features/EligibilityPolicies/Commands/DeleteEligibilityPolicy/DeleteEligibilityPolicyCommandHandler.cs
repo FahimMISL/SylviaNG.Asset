@@ -5,7 +5,7 @@ using RMS.Domain.Entities;
 
 namespace RMS.Application.Features.EligibilityPolicies.Commands.DeleteEligibilityPolicy;
 
-public class DeleteEligibilityPolicyCommandHandler : IRequestHandler<DeleteEligibilityPolicyCommand>
+public class DeleteEligibilityPolicyCommandHandler : IRequestHandler<DeleteEligibilityPolicyCommand, Unit>
 {
     private readonly IEligibilityPolicyRepository _policyRepository;
     private readonly ICurrentUserService _currentUser;
@@ -21,16 +21,18 @@ public class DeleteEligibilityPolicyCommandHandler : IRequestHandler<DeleteEligi
         _unitOfWork = unitOfWork;
     }
 
-    public async Task Handle(DeleteEligibilityPolicyCommand request, CancellationToken cancellationToken)
+    public async Task<Unit> Handle(DeleteEligibilityPolicyCommand request, CancellationToken cancellationToken)
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
         var policy = await _policyRepository.GetByIdAsync(companyId, request.PolicyId, cancellationToken)
             ?? throw new NotFoundException(nameof(EligibilityPolicy), request.PolicyId);
 
-        _policyRepository.Remove(policy);
+        policy.Delete(_currentUser.UserId);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        await _auditLogger.LogAsync("EligibilityPolicyDeleted", nameof(EligibilityPolicy), policy.Id, $"Name={policy.Name}", cancellationToken);
+        await _auditLogger.LogAsync("EligibilityPolicyTrashed", nameof(EligibilityPolicy), policy.Id, $"Name={policy.Name}", cancellationToken);
+
+        return Unit.Value;
     }
 }

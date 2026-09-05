@@ -115,6 +115,7 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
 
             // Feature 4 - Eligibility & Policy Management
             services.AddScoped<IEligibilityPolicyRepository, EligibilityPolicyRepository>();
+            services.AddHostedService<EligibilityPolicyTrashPurgeService>();
 
             // Feature 8 - Audit & Compliance
             services.AddScoped<IAuditLogRepository, AuditLogRepository>();

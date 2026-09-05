@@ -15,16 +15,16 @@ public class AuditLogger : IAuditLogger
         _currentUser = currentUser;
     }
 
-    public Task LogAsync(string actionType, string entityName, Guid entityId, string? details = null, CancellationToken cancellationToken = default) =>
+    public Task LogAsync(string actionType, string entityName, Guid entityId, string? details = null, CancellationToken cancellationToken = default, string? target = null) =>
         WriteAsync(
             actionType, entityName, entityId,
             _currentUser.UserId, _currentUser.FullName ?? "System", _currentUser.Role?.ToString(),
-            details, cancellationToken);
+            details, target, cancellationToken);
 
-    public Task LogAsync(string actionType, string entityName, Guid entityId, Guid actorUserId, string actorName, string actorRole, string? details = null, CancellationToken cancellationToken = default) =>
-        WriteAsync(actionType, entityName, entityId, actorUserId, actorName, actorRole, details, cancellationToken);
+    public Task LogAsync(string actionType, string entityName, Guid entityId, Guid actorUserId, string actorName, string actorRole, string? details = null, CancellationToken cancellationToken = default, string? target = null) =>
+        WriteAsync(actionType, entityName, entityId, actorUserId, actorName, actorRole, details, target, cancellationToken);
 
-    private async Task WriteAsync(string actionType, string entityName, Guid entityId, Guid? actorUserId, string actorName, string? actorRole, string? details, CancellationToken cancellationToken)
+    private async Task WriteAsync(string actionType, string entityName, Guid entityId, Guid? actorUserId, string actorName, string? actorRole, string? details, string? target, CancellationToken cancellationToken)
     {
         _context.AuditLogs.Add(new AuditLog
         {
@@ -35,6 +35,7 @@ public class AuditLogger : IAuditLogger
             ActionType = actionType,
             EntityName = entityName,
             EntityId = entityId,
+            TargetName = target,
             Details = details,
             IpAddress = _currentUser.IpAddress,
             TimestampUtc = DateTime.UtcNow,

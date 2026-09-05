@@ -5,7 +5,7 @@ using RMS.Domain.Entities;
 
 namespace RMS.Application.Features.Users.Commands.UpdateUserRole;
 
-public class UpdateUserRoleCommandHandler : IRequestHandler<UpdateUserRoleCommand>
+public class UpdateUserRoleCommandHandler : IRequestHandler<UpdateUserRoleCommand, Unit>
 {
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUserService _currentUser;
@@ -21,7 +21,7 @@ public class UpdateUserRoleCommandHandler : IRequestHandler<UpdateUserRoleComman
         _unitOfWork = unitOfWork;
     }
 
-    public async Task Handle(UpdateUserRoleCommand request, CancellationToken cancellationToken)
+    public async Task<Unit> Handle(UpdateUserRoleCommand request, CancellationToken cancellationToken)
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
@@ -35,13 +35,15 @@ public class UpdateUserRoleCommandHandler : IRequestHandler<UpdateUserRoleComman
         var oldRole = user.Role;
         if (oldRole == request.NewRole)
         {
-            return;
+            return Unit.Value;
         }
 
         user.Role = request.NewRole;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditLogger.LogAsync(
-            "UserRoleChanged", nameof(User), user.Id, $"OldRole={oldRole}; NewRole={request.NewRole}", cancellationToken);
+            "UserRoleChanged", nameof(User), user.Id, $"OldRole={oldRole}; NewRole={request.NewRole}", cancellationToken, target: user.FullName);
+
+        return Unit.Value;
     }
 }

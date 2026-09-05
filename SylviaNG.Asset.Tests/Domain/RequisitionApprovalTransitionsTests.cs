@@ -59,7 +59,7 @@ public class RequisitionApprovalTransitionsTests
     {
         var requisition = NewRequisition(RequisitionStatus.UnderReview);
 
-        var entry = requisition.Reject(Guid.NewGuid(), "Bob", "LineManager", "Budget not available this quarter.");
+        var entry = requisition.Reject(Guid.NewGuid(), "Bob", "Manager", "Budget not available this quarter.");
 
         requisition.Status.Should().Be(RequisitionStatus.Rejected);
         entry.Comment.Should().Be("Budget not available this quarter.");
@@ -70,7 +70,7 @@ public class RequisitionApprovalTransitionsTests
     {
         var requisition = NewRequisition(RequisitionStatus.UnderReview);
 
-        var entry = requisition.SendBack(Guid.NewGuid(), "Bob", "LineManager", "Please add more item detail.");
+        var entry = requisition.SendBack(Guid.NewGuid(), "Bob", "Manager", "Please add more item detail.");
 
         requisition.Status.Should().Be(RequisitionStatus.SentBack);
         entry.ToStatus.Should().Be(RequisitionStatus.SentBack);

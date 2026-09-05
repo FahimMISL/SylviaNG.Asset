@@ -52,6 +52,11 @@ public class CreateDelegationCommandHandler : IRequestHandler<CreateDelegationCo
             throw new ConflictException("The selected delegate must be an active user in your company.");
         }
 
+        if (delegateUser.Role == UserRole.Employee)
+        {
+            throw new ConflictException("Approvals can only be delegated to someone who can act as an approver, not a plain Employee.");
+        }
+
         var delegation = new ApprovalDelegation
         {
             CompanyId = companyId,

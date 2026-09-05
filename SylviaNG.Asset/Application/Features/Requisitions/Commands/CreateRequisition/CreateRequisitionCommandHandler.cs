@@ -55,7 +55,11 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             throw new ConflictException("This category is not currently active and cannot be used for a new requisition.");
         }
 
+        RequisitionFieldValidation.EnsureRequesterAllowedForCategory(category, _currentUser.Role);
+
         RequisitionFieldValidation.EnsureValid(category, request.FieldValues, request.CostCenterId, request.ProjectCode, request.Submit);
+
+        var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
 
         var requisition = new Requisition
         {
@@ -65,7 +69,11 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             RequestedByUserId = userId,
             Priority = request.Priority,
             NeedByDate = request.NeedByDate,
-            EstimatedCost = request.EstimatedCost,
+            // Feature 3 correction: cost is always the Admin's own catalog price x quantity - never
+            // a number the requestor or an approver types in. Computed once, here, before the
+            // requisition even enters the approval workflow, so every cost-based stage condition
+            // downstream evaluates against a real, reliable figure from the very first moment.
+            EstimatedCost = RequisitionFieldValidation.ComputeEstimatedCost(category, resolvedItems),
             Justification = request.Justification,
             UrgencyJustification = request.UrgencyJustification,
             CostCenterId = request.CostCenterId,
@@ -83,8 +91,6 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
             ActorRole = actorRole,
         };
         requisition.StatusHistory.Add(draftEntry);
-
-        var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
 
         if (request.Submit)
         {
@@ -143,6 +149,18 @@ public class CreateRequisitionCommandHandler : IRequestHandler<CreateRequisition
         await _auditLogger.LogAsync(
             request.Submit ? "RequisitionSubmitted" : "RequisitionDraftSaved",
             nameof(Requisition), requisition.Id, $"CategoryId={requisition.CategoryId}", cancellationToken);
+
+        // Feature 8.1: ResolveAndStartAsync above unconditionally transitions Submitted -> UnderReview
+        // via Requisition.BeginReview before it resolves/starts the first stage - a real, distinct
+        // transition RequisitionStatusHistories already records, but the Audit Trail previously
+        // collapsed it into the single "RequisitionSubmitted" entry above. Logged separately here so
+        // the Full Audit Trail shows it as its own event, matching the requisition's real history.
+        if (request.Submit)
+        {
+            await _auditLogger.LogAsync(
+                "RequisitionUnderReview", nameof(Requisition), requisition.Id,
+                "Approval workflow started; requisition moved to Under Review.", cancellationToken);
+        }
 
         // Feature 9 (US-028): confirmation to the requestor, sent alongside whatever the approval
         // engine queued (e.g. the first approver's ApprovalQueueEntry) - all sent only now, after

@@ -8,7 +8,6 @@ public record SaveRequisitionRequestBody(
     List<RequisitionItemInput> Items,
     RequisitionPriority Priority,
     DateTime? NeedByDate,
-    decimal EstimatedCost,
     string? Justification,
     string? UrgencyJustification,
     Guid? CostCenterId,

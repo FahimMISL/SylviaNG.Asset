@@ -39,10 +39,11 @@ public class AuditLogController : ControllerBase
         [FromQuery] string? department,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] bool sortDescending = true,
         CancellationToken cancellationToken = default)
     {
         var result = await _sender.Send(
-            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department, page, pageSize),
+            new GetAuditLogQuery(requisitionId, dateFrom, dateTo, actorSearch, actionType, categoryId, department, page, pageSize, sortDescending),
             cancellationToken);
         return Ok(result);
     }

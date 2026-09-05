@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using SylviaNG.Assets.Application.Common.Exceptions;
 using RMS.Application.Features.Requisitions.DTOs;
+using RMS.Application.Features.Requisitions.Services;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
@@ -41,7 +42,17 @@ public class UploadRequisitionAttachmentCommandHandler : IRequestHandler<UploadR
         var requisition = await _requisitionRepository.GetByIdAsync(request.RequisitionId, cancellationToken)
             ?? throw new NotFoundException(nameof(Requisition), request.RequisitionId);
 
-        if (requisition.RequestedByUserId != userId)
+        // Feature 13: broadened beyond owner-only so Procurement Officers can attach procurement/
+        // fulfillment documents to requisitions they're processing, and HR Managers can attach
+        // manpower documents to requisitions they didn't personally submit - the same two scopes
+        // Download (Feature 10) and the Dashboard's manpower summary (Feature 12) already established.
+        // Delete stays owner-only, untouched - a destructive action shouldn't be handed to non-owners.
+        var isOwner = requisition.RequestedByUserId == userId;
+        var isProcurementOnPipeline = !isOwner && _currentUser.IsInRole(UserRole.ProcurementOfficer)
+            && RequisitionAccessHelper.ProcurementPipelineStatuses.Contains(requisition.Status);
+        var isHrOnManpower = !isOwner && _currentUser.IsInRole(UserRole.HrManager)
+            && string.Equals(requisition.Category?.Name?.Trim(), "Manpower", StringComparison.OrdinalIgnoreCase);
+        if (!isOwner && !isProcurementOnPipeline && !isHrOnManpower)
         {
             throw new ForbiddenException();
         }
@@ -70,14 +81,24 @@ public class UploadRequisitionAttachmentCommandHandler : IRequestHandler<UploadR
             throw new ConflictException($"File exceeds the maximum size of {maxFileSizeBytes / (1024 * 1024)} MB.");
         }
 
+        // Feature 13: soft-deleted attachments no longer count toward the active storage cap - a
+        // "removed" file shouldn't keep blocking new uploads.
         var maxTotalSizeBytes = _configuration.GetValue("Rms:MaxTotalAttachmentsSizeMb", RequisitionAttachmentRules.DefaultMaxTotalSizeMb) * 1024 * 1024;
-        var currentTotal = requisition.Attachments.Sum(a => a.SizeBytes);
+        var currentTotal = requisition.Attachments.Where(a => !a.IsDeleted).Sum(a => a.SizeBytes);
         if (currentTotal + request.SizeBytes > maxTotalSizeBytes)
         {
             throw new ConflictException($"This requisition's attachments would exceed the total limit of {maxTotalSizeBytes / (1024 * 1024)} MB.");
         }
 
         var storagePath = await _fileStorage.SaveAsync(request.RequisitionId.ToString(), request.FileName, request.Content, cancellationToken);
+
+        // Feature 13: next version in this (RequisitionId, DocumentType) lineage - includes
+        // soft-deleted rows so a removed version's number is never reused, keeping the sequence
+        // strictly monotonic even across a delete.
+        var version = requisition.Attachments
+            .Where(a => a.DocumentType == request.DocumentType)
+            .Select(a => (int?)a.Version)
+            .Max() is { } maxVersion ? maxVersion + 1 : 1;
 
         var attachment = new RequisitionAttachment
         {
@@ -86,6 +107,8 @@ public class UploadRequisitionAttachmentCommandHandler : IRequestHandler<UploadR
             ContentType = request.ContentType,
             SizeBytes = request.SizeBytes,
             StoragePath = storagePath,
+            DocumentType = request.DocumentType,
+            Version = version,
             UploadedByUserId = userId,
             UploadedByName = actorName,
             CreatedByUserId = userId,
@@ -96,10 +119,13 @@ public class UploadRequisitionAttachmentCommandHandler : IRequestHandler<UploadR
         _requisitionRepository.AddAttachment(requisition, attachment);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        await _auditLogger.LogAsync(
-            "RequisitionAttachmentAdded", nameof(Requisition), requisition.Id,
-            pastApproverAction ? $"File={request.FileName}; Reason={request.Reason}" : $"File={request.FileName}", cancellationToken);
+        // Feature 13: distinguishes a genuinely new document (Version 1) from a new version of an
+        // existing one - the task names these as two separate events to audit.
+        var actionType = version == 1 ? "RequisitionAttachmentAdded" : "RequisitionAttachmentVersionAdded";
+        var details = $"File={request.FileName}; Type={request.DocumentType}; Version={version}"
+            + (pastApproverAction ? $"; Reason={request.Reason}" : string.Empty);
+        await _auditLogger.LogAsync(actionType, nameof(Requisition), requisition.Id, details, cancellationToken);
 
-        return RequisitionAttachmentDto.FromEntity(attachment);
+        return RequisitionAttachmentDto.FromEntity(attachment, requisition.Attachments);
     }
 }

@@ -86,7 +86,7 @@ public class UpdateRequisitionAuditTests
         var command = new UpdateRequisitionCommand(
             _requisitionId, _categoryId,
             [new RequisitionItemInput(_monitorId, 2)],
-            RequisitionPriority.Medium, DateTime.UtcNow.AddDays(7), 0, null, null, null, null,
+            RequisitionPriority.Medium, DateTime.UtcNow.AddDays(7), null, null, null, null,
             [], null, Submit: false);
 
         await handler.Handle(command, CancellationToken.None);
@@ -135,7 +135,7 @@ public class UpdateRequisitionAuditTests
         var command = new UpdateRequisitionCommand(
             _requisitionId, _categoryId,
             [new RequisitionItemInput(_laptopId, 1)],
-            RequisitionPriority.Medium, DateTime.UtcNow.AddDays(7), 0, null, null, null, null,
+            RequisitionPriority.Medium, DateTime.UtcNow.AddDays(7), null, null, null, null,
             [], "Resubmitting.", Submit: true);
 
         var act = () => handler.Handle(command, CancellationToken.None);

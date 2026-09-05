@@ -1,5 +1,4 @@
 using FluentValidation;
-using RMS.Application.Features.ApprovalWorkflows.Mappings;
 using RMS.Domain.Enums;
 
 namespace RMS.Application.Features.ApprovalWorkflows.Commands.UpdateApprovalWorkflowVersion;
@@ -13,11 +12,6 @@ public class UpdateApprovalWorkflowVersionCommandValidator : AbstractValidator<U
         RuleFor(c => c.Stages)
             .Must(stages => stages.Select(s => s.StageOrder).Distinct().Count() == stages.Count)
             .WithMessage("Stage order values must be unique.")
-            .When(c => c.Stages.Count > 0);
-
-        RuleFor(c => c.Stages)
-            .Must(ApprovalWorkflowStageMapper.HasNoOverlappingCostRanges)
-            .WithMessage("Two or more stages have overlapping Cost condition ranges.")
             .When(c => c.Stages.Count > 0);
 
         RuleForEach(c => c.Stages).ChildRules(stage =>

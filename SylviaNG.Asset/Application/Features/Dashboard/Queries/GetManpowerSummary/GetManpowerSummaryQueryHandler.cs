@@ -43,6 +43,7 @@ public class GetManpowerSummaryQueryHandler : IRequestHandler<GetManpowerSummary
             .Take(10)
             .Select(r => new ManpowerRequisitionSummaryDto(
                 r.Id, r.RequisitionNumber, r.RequestedByUser?.FullName ?? "(unknown)", r.Status.ToString(), r.CreatedAtUtc,
+                r.SubmittedAtUtc,
                 r.Items.Sum(i => i.Quantity),
                 r.Items.Select(i => new PositionQuantityDto(i.ItemName, i.Quantity)).ToList()))
             .ToList();

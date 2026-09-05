@@ -16,4 +16,5 @@ public record GetAuditLogQuery(
     Guid? CategoryId,
     string? Department,
     int Page = 1,
-    int PageSize = 20) : IRequest<PagedResult<AuditLogEntryDto>>;
+    int PageSize = 20,
+    bool SortDescending = true) : IRequest<PagedResult<AuditLogEntryDto>>;

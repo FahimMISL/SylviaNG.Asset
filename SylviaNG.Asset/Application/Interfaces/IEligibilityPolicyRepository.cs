@@ -33,4 +33,17 @@ public interface IEligibilityPolicyRepository
     void SetReplacementRule(EligibilityPolicy policy, EligibilityPolicyReplacementRule? newRule);
 
     void Remove(EligibilityPolicy policy);
+
+    /// <summary>Trash: policies currently soft-deleted (IsDeleted=true) for this company, newest-
+    /// deleted first - the source for the Trash view's Restore/Permanent Delete actions.</summary>
+    Task<List<EligibilityPolicy>> GetTrashedAsync(Guid companyId, CancellationToken cancellationToken = default);
+
+    /// <summary>Unlike GetByIdAsync, does NOT filter out soft-deleted rows - Restore and Permanent
+    /// Delete both need to find a policy that's currently IN the trash by definition.</summary>
+    Task<EligibilityPolicy?> GetByIdIncludingDeletedAsync(Guid companyId, Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>EligibilityPolicyTrashPurgeService's sweep - every soft-deleted policy (across every
+    /// company; this is a system maintenance job, not a per-tenant read) whose retention window has
+    /// elapsed as of cutoffUtc.</summary>
+    Task<List<EligibilityPolicy>> GetExpiredTrashAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
 }

@@ -14,7 +14,7 @@ public static class AuditLogExportService
 {
     private static readonly string[] Headers =
     [
-        "Timestamp (UTC)", "Actor", "Actor Role", "System-Generated", "Action Type",
+        "Timestamp (UTC)", "Actor", "Target", "Actor Role", "System-Generated", "Action Type",
         "Entity", "Entity Id", "Details", "IP Address"
     ];
 
@@ -63,6 +63,7 @@ public static class AuditLogExportService
     [
         e.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
         e.ActorName,
+        e.Target ?? "",
         e.ActorRole ?? "",
         e.IsSystemGenerated ? "Yes" : "No",
         e.ActionType,

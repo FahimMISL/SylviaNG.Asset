@@ -50,21 +50,24 @@ public class ApprovalWorkflowRepository : IApprovalWorkflowRepository
             .Include(w => w.Versions).ThenInclude(v => v.CategoryLinks)
             .ToListAsync(cancellationToken);
 
-        foreach (var workflow in candidates)
-        {
-            var version = workflow.Versions.FirstOrDefault(v => v.VersionNumber == workflow.CurrentVersionNumber && v.IsPublished);
-            if (version is null)
-            {
-                continue;
-            }
+        var currentVersions = candidates
+            .Select(w => w.Versions.FirstOrDefault(v => v.VersionNumber == w.CurrentVersionNumber && v.IsPublished))
+            .Where(v => v is not null)
+            .Select(v => v!)
+            .ToList();
 
-            if (version.AppliesToAllCategories || version.CategoryLinks.Any(l => l.RequisitionCategoryId == categoryId))
-            {
-                return version;
-            }
+        // A workflow explicitly scoped to this category must always win over one that merely applies
+        // to every category - otherwise which one resolves is pure luck of query row order (the actual
+        // bug: an unrelated "applies to all categories" workflow was silently swallowing every Manpower
+        // submission ahead of the real, narrowly-scoped Manpower workflow). Most-specific-wins, checked
+        // as its own pass before ever falling back to an all-categories match.
+        var specificMatch = currentVersions.FirstOrDefault(v => v.CategoryLinks.Any(l => l.RequisitionCategoryId == categoryId));
+        if (specificMatch is not null)
+        {
+            return specificMatch;
         }
 
-        return null;
+        return currentVersions.FirstOrDefault(v => v.AppliesToAllCategories);
     }
 
     public Task<ApprovalWorkflowVersion?> GetVersionByIdAsync(Guid versionId, CancellationToken cancellationToken = default) =>
@@ -79,10 +82,29 @@ public class ApprovalWorkflowRepository : IApprovalWorkflowRepository
 
     public void AddVersion(ApprovalWorkflowVersion version) => _context.ApprovalWorkflowVersions.Add(version);
 
-    public void ReplaceVersionStages(ApprovalWorkflowVersion version, List<ApprovalWorkflowStage> newStages)
+    public async Task ReplaceVersionStagesAsync(ApprovalWorkflowVersion version, List<ApprovalWorkflowStage> newStages, CancellationToken cancellationToken = default)
     {
         _context.ApprovalWorkflowStages.RemoveRange(version.Stages);
         version.Stages.Clear();
+
+        // Flush the deletes to the database BEFORE queuing the inserts, in their own SaveChanges.
+        // Editing an existing draft (the normal case - "Create New Version" clones the prior version's
+        // stages, so there's always something here to replace) reuses the same StageOrder values the
+        // old rows already had. IX_ApprovalWorkflowStages_ApprovalWorkflowVersionId_StageOrder is a
+        // unique index on (VersionId, StageOrder), and batching the deletes and inserts into one
+        // SaveChanges let the new rows' INSERTs reach Postgres while the old rows sharing the same
+        // StageOrder were still present, violating that constraint. A brand new workflow's very first
+        // save (nothing to remove) never hit this - only ever re-saving an already-populated draft did.
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // ApprovalWorkflowStageMapper.ToEntities builds bare stage entities with no way to know their
+        // parent version's Id - it's a static mapper with no version context. Set it explicitly here
+        // (the one place that actually has `version`), or every new stage inserts with a default/empty
+        // ApprovalWorkflowVersionId and violates the FK to ApprovalWorkflowVersions.
+        foreach (var stage in newStages)
+        {
+            stage.ApprovalWorkflowVersionId = version.Id;
+        }
 
         // Added directly to the DbSet (whole new subgraph, including each stage's Approvers/
         // Conditions/Sla) so EF Core tracks the entire thing as inserts - see

@@ -49,7 +49,7 @@ public class UpdateApprovalWorkflowVersionCommandHandler : IRequestHandler<Updat
         version.UpdatedAtUtc = DateTime.UtcNow;
 
         var newStages = ApprovalWorkflowStageMapper.ToEntities(request.Stages);
-        _workflowRepository.ReplaceVersionStages(version, newStages);
+        await _workflowRepository.ReplaceVersionStagesAsync(version, newStages, cancellationToken);
 
         _workflowRepository.ReplaceVersionCategoryLinks(
             version, request.AppliesToAllCategories ? new List<Guid>() : request.CategoryIds.Distinct().ToList());

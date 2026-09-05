@@ -106,6 +106,18 @@ public class RequisitionCategory : AuditableEntity
             clone.FieldDefinitions.Add(clonedField);
         }
 
+        foreach (var item in Items.OrderBy(i => i.DisplayOrder))
+        {
+            clone.Items.Add(new CategoryItem
+            {
+                CategoryId = clone.Id,
+                Name = item.Name,
+                IsActive = item.IsActive,
+                DisplayOrder = item.DisplayOrder,
+                Price = item.Price,
+            });
+        }
+
         return clone;
     }
 }

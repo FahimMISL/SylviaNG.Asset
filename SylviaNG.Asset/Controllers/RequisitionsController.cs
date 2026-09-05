@@ -12,6 +12,7 @@ using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Application.Features.Requisitions.Queries.CheckDuplicateRequisition;
 using RMS.Application.Features.Requisitions.Queries.GetDepartmentRequisitions;
 using RMS.Application.Features.Requisitions.Queries.GetMyRequisitions;
+using RMS.Application.Features.Requisitions.Queries.GetMySearchPermission;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionAttachmentDownload;
 using RMS.Application.Features.Requisitions.Queries.GetRequisitionById;
 using RMS.Application.Features.Requisitions.Queries.SearchRequisitions;
@@ -98,6 +99,15 @@ public class RequisitionsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Feature 11.5: lets the frontend self-check the caller's own Search/View grant (sidebar
+    /// visibility, direct-navigation guard) without needing Module=Rbac access to read the full matrix.</summary>
+    [HttpGet("search/my-permission")]
+    public async Task<ActionResult<SearchMyPermissionDto>> GetMySearchPermission(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetMySearchPermissionQuery(), cancellationToken);
+        return Ok(result);
+    }
+
     /// <summary>FR-RR-011: soft duplicate-submission warning, checked before Create/Update actually submits.</summary>
     [HttpGet("duplicate-check")]
     public async Task<ActionResult<DuplicateCheckResultDto>> CheckDuplicate(
@@ -112,7 +122,7 @@ public class RequisitionsController : ControllerBase
     public async Task<ActionResult<RequisitionDto>> Create(SaveRequisitionRequestBody body, CancellationToken cancellationToken)
     {
         var command = new CreateRequisitionCommand(
-            body.CategoryId, body.Items, body.Priority, body.NeedByDate, body.EstimatedCost, body.Justification,
+            body.CategoryId, body.Items, body.Priority, body.NeedByDate, body.Justification,
             body.UrgencyJustification, body.CostCenterId, body.ProjectCode, body.FieldValues, body.Submit);
         var result = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
@@ -124,7 +134,7 @@ public class RequisitionsController : ControllerBase
     public async Task<ActionResult<RequisitionDto>> Update(Guid id, SaveRequisitionRequestBody body, CancellationToken cancellationToken)
     {
         var command = new UpdateRequisitionCommand(
-            id, body.CategoryId, body.Items, body.Priority, body.NeedByDate, body.EstimatedCost, body.Justification,
+            id, body.CategoryId, body.Items, body.Priority, body.NeedByDate, body.Justification,
             body.UrgencyJustification, body.CostCenterId, body.ProjectCode, body.FieldValues, body.ResubmitComment, body.Submit);
         var result = await _sender.Send(command, cancellationToken);
         return Ok(result);
@@ -142,10 +152,11 @@ public class RequisitionsController : ControllerBase
     [HttpPost("{id:guid}/attachments")]
     [RequestSizeLimit(100_000_000)]
     public async Task<ActionResult<RequisitionAttachmentDto>> UploadAttachment(
-        Guid id, IFormFile file, [FromForm] string? reason, CancellationToken cancellationToken)
+        Guid id, IFormFile file, [FromForm] string? reason, [FromForm] DocumentType documentType = DocumentType.SupportingDocument,
+        CancellationToken cancellationToken = default)
     {
         await using var stream = file.OpenReadStream();
-        var command = new UploadRequisitionAttachmentCommand(id, file.FileName, file.ContentType, file.Length, stream, reason);
+        var command = new UploadRequisitionAttachmentCommand(id, file.FileName, file.ContentType, file.Length, stream, reason, documentType);
         var result = await _sender.Send(command, cancellationToken);
         return Ok(result);
     }

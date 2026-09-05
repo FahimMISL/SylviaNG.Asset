@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using FluentValidation;
 using FluentValidation.Results;
+using SylviaNG.Assets.Application.Common.Exceptions;
 using RMS.Application.Features.Requisitions.DTOs;
 using RMS.Domain.Entities;
 using RMS.Domain.Enums;
@@ -100,6 +101,30 @@ public static class RequisitionFieldValidation
     }
 
     /// <summary>
+    /// A Manpower requisition is just a Requisition with Category="Manpower" (same convention used
+    /// throughout the app - e.g. RequisitionRepository.GetManpowerForCompanyAsync) - there is no dedicated
+    /// CategoryType enum, so it's identified by name here too. Restricted to DepartmentHead (or
+    /// SystemAdmin, which implicitly bypasses every check the same way it does everywhere else in
+    /// this app) because the configured Manpower approval workflow has exactly one stage, HR Review,
+    /// deliberately assigned to HrManager rather than DepartmentHead specifically so the requester
+    /// can never end up approving their own submission - see RmsDevelopmentSeeder's remarks on the
+    /// Manpower workflow default. Called from both Create/Update handlers, same as EnsureValid above,
+    /// since a Draft's category can be changed on Update too.
+    /// </summary>
+    public static void EnsureRequesterAllowedForCategory(RequisitionCategory category, UserRole? requesterRole)
+    {
+        if (!string.Equals(category.Name, "Manpower", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        if (requesterRole == UserRole.DepartmentHead || requesterRole == UserRole.SystemAdmin)
+        {
+            return;
+        }
+        throw new ForbiddenException("Only a Department Head can submit a Manpower requisition.");
+    }
+
+    /// <summary>
     /// Resolves each submitted item against the category's Admin-defined Items/Types and returns
     /// real RequisitionItem entities with the server's own Name - the client never supplies free
     /// text, so there is no way to bypass the dropdown through the API.
@@ -142,4 +167,12 @@ public static class RequisitionFieldValidation
 
         return resolved;
     }
+
+    /// <summary>The requisition's total cost, computed from the Admin-set catalog price of each
+    /// resolved item x its quantity - never typed by the requestor or an approver. An item whose
+    /// CategoryItem.Price was left blank by Admin contributes 0, not an error - Price stays optional
+    /// (Feature 4: "informational only") for items nobody has priced yet.</summary>
+    public static decimal ComputeEstimatedCost(RequisitionCategory category, List<RequisitionItem> resolvedItems) =>
+        resolvedItems.Sum(item =>
+            (category.Items.FirstOrDefault(ci => ci.Id == item.CategoryItemId)?.Price ?? 0m) * item.Quantity);
 }

@@ -76,7 +76,6 @@ public class RequisitionEligibilityGateTests
         [new RequisitionItemInput(_categoryItemId, 1)],
         RequisitionPriority.Medium,
         DateTime.UtcNow.AddDays(7),
-        0,
         null,
         null,
         null,

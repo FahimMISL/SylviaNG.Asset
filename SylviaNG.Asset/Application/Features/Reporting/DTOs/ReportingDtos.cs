@@ -48,3 +48,26 @@ public record ExecutiveSummaryDto(
     string EligibilityBlockNote,
     List<DepartmentCountDto> TopDepartments,
     List<CategoryCountDto> CategoryBreakdown);
+
+/// <summary>One Weekly/Monthly/Yearly bucket of a My Report/All Users Report trend - unlike
+/// MonthlyTrendPointDto (submitted count only), this breaks the bucket down by outcome so the graph
+/// can show approved/rejected/partially-approved as separate series, not just submission volume.</summary>
+public record PeriodTrendPointDto(
+    string Label, int SubmittedCount, int ApprovedCount, int RejectedCount, int PartiallyApprovedCount, int FulfilledCount);
+
+/// <summary>One person's requisition history for My Report (their own) or one row of All Users Report.
+/// UserId/UserName are null/"All Users" for the All Users Report's own company/department-wide
+/// aggregate row - same shape, just summed over everyone in scope instead of one person.</summary>
+public record PersonReportDto(
+    Guid? UserId,
+    string UserName,
+    string? Department,
+    int TotalCount,
+    int PendingCount,
+    int ApprovedCount,
+    int RejectedCount,
+    int PartiallyApprovedCount,
+    int FulfilledCount,
+    List<PeriodTrendPointDto> Trend);
+
+public record AllUsersReportDto(PersonReportDto Overall, List<PersonReportDto> People);

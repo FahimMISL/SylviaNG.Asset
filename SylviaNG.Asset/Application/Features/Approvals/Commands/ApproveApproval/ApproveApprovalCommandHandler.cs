@@ -50,13 +50,6 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
         var assignment = await ApprovalAuthorizationHelper.GetActionableAssignmentAsync(
             approval, userId, _delegationRepository, cancellationToken);
 
-        // Not required even on a CapturesEstimatedCost stage - there's no Procurement Officer
-        // feature yet to be the real source of a cost figure, so forcing the approver to guess
-        // one would be fake data. If it's left blank, AdvanceAfterApprovalAsync simply leaves
-        // Requisition.EstimatedCost untouched, which means any cost-based conditional stage
-        // downstream won't match (safe default: no known cost = no cost-triggered escalation).
-        var stageCapturesEstimatedCost = approval.ApprovalWorkflowStage!.CapturesEstimatedCost;
-
         assignment.HasActed = true;
         assignment.ActedAtUtc = DateTime.UtcNow;
 
@@ -73,7 +66,6 @@ public class ApproveApprovalCommandHandler : IRequestHandler<ApproveApprovalComm
             ActorName = actorName,
             ActorRole = actorRole,
             Comment = request.Comment,
-            CapturedEstimatedCost = stageCapturesEstimatedCost ? request.EstimatedCost : null,
         });
 
         var stageComplete = ApprovalWorkflowEngine.IsStageComplete(approval);

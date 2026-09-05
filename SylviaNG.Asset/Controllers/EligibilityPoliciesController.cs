@@ -4,20 +4,28 @@ using Microsoft.AspNetCore.Mvc;
 using RMS.Api.Controllers.Requests;
 using RMS.Application.Features.EligibilityPolicies.Commands.CreateEligibilityPolicy;
 using RMS.Application.Features.EligibilityPolicies.Commands.DeleteEligibilityPolicy;
+using RMS.Application.Features.EligibilityPolicies.Commands.PermanentlyDeleteEligibilityPolicy;
+using RMS.Application.Features.EligibilityPolicies.Commands.RestoreEligibilityPolicy;
 using RMS.Application.Features.EligibilityPolicies.Commands.SetEligibilityPolicyActiveState;
 using RMS.Application.Features.EligibilityPolicies.Commands.UpdateEligibilityPolicy;
 using RMS.Application.Features.EligibilityPolicies.DTOs;
 using RMS.Application.Features.EligibilityPolicies.Queries.CheckEligibility;
 using RMS.Application.Features.EligibilityPolicies.Queries.GetEligibilityPolicies;
 using RMS.Application.Features.EligibilityPolicies.Queries.GetEligibilityPolicyById;
+using RMS.Application.Features.EligibilityPolicies.Queries.GetMyEligibilityPolicyPermissions;
+using RMS.Application.Features.EligibilityPolicies.Queries.GetTrashedEligibilityPolicies;
 using RMS.Domain.Enums;
 
 namespace RMS.Api.Controllers;
 
 /// <summary>
-/// Feature 4 - Eligibility & Policy Management, admin configuration surface plus the employee-facing
-/// eligibility check the New Requisition flow calls. Every write action is System Admin only; the
-/// check endpoint is open to any authenticated user (it only ever evaluates the CALLER's own record).
+/// Feature 4 - Eligibility &amp; Policy Management, admin configuration surface plus the employee-facing
+/// eligibility check the New Requisition flow calls. Write actions are gated by the live Roles &amp;
+/// Permissions matrix (Module=EligibilityPolicy) in each command/query itself - NOT hardcoded to
+/// SystemAdmin any more (see GetMyEligibilityPolicyPermissionsQuery, which the frontend uses to show/
+/// hide actions to match). The one exception is Permanent Delete, which by design stays SystemAdmin-
+/// only regardless of what the matrix grants for the ordinary Delete action - see
+/// PermanentlyDeleteEligibilityPolicyCommandHandler.
 /// </summary>
 [ApiController]
 [Route("api/eligibility-policies")]
@@ -59,8 +67,15 @@ public class EligibilityPoliciesController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Drives the Eligibility &amp; Policies screen's action buttons - see the class remarks.</summary>
+    [HttpGet("my-permissions")]
+    public async Task<ActionResult<EligibilityPolicyMyPermissionsDto>> GetMyPermissions(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetMyEligibilityPolicyPermissionsQuery(), cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost]
-    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
     public async Task<ActionResult<EligibilityPolicyDto>> Create(SaveEligibilityPolicyRequestBody body, CancellationToken cancellationToken)
     {
         var command = new CreateEligibilityPolicyCommand(
@@ -70,7 +85,6 @@ public class EligibilityPoliciesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
     public async Task<ActionResult<EligibilityPolicyDto>> Update(Guid id, SaveEligibilityPolicyRequestBody body, CancellationToken cancellationToken)
     {
         var command = new UpdateEligibilityPolicyCommand(
@@ -80,7 +94,6 @@ public class EligibilityPoliciesController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/activate")]
-    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
     public async Task<ActionResult<EligibilityPolicyDto>> Activate(Guid id, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new SetEligibilityPolicyActiveStateCommand(id, true), cancellationToken);
@@ -88,18 +101,42 @@ public class EligibilityPoliciesController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/deactivate")]
-    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
     public async Task<ActionResult<EligibilityPolicyDto>> Deactivate(Guid id, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new SetEligibilityPolicyActiveStateCommand(id, false), cancellationToken);
         return Ok(result);
     }
 
+    /// <summary>Moves the policy to Trash - does NOT permanently delete it, see PermanentDelete below.</summary>
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await _sender.Send(new DeleteEligibilityPolicyCommand(id), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("trash")]
+    public async Task<ActionResult<List<EligibilityPolicyTrashDto>>> GetTrash(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetTrashedEligibilityPoliciesQuery(), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/restore")]
+    public async Task<ActionResult<EligibilityPolicyDto>> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new RestoreEligibilityPolicyCommand(id), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Irreversible - see PermanentlyDeleteEligibilityPolicyCommandHandler. SystemAdmin-only
+    /// by design, enforced in the handler; the attribute here just documents that intent (this
+    /// controller's class-level [AllowAnonymous] means it isn't the actual enforcement).</summary>
+    [HttpDelete("{id:guid}/permanent")]
+    [Authorize(Roles = nameof(UserRole.SystemAdmin))]
+    public async Task<IActionResult> PermanentDelete(Guid id, CancellationToken cancellationToken)
+    {
+        await _sender.Send(new PermanentlyDeleteEligibilityPolicyCommand(id), cancellationToken);
         return NoContent();
     }
 }

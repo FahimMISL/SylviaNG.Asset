@@ -19,4 +19,14 @@ public interface IUserRepository
     /// optionally filtered by role; includes inactive users (the frontend needs to show/label them,
     /// not just active ones like the engine's own GetActiveByRoleAsync).</summary>
     Task<List<User>> GetAllAsync(Guid companyId, UserRole? role, CancellationToken cancellationToken = default);
+
+    /// <summary>Admin user-management (Create/Edit): true if another user in the company already has
+    /// this email (case-insensitive - Email has a unique index at the DB level). excludeUserId lets
+    /// Update check uniqueness against every OTHER user without tripping on the record being edited.</summary>
+    Task<bool> ExistsByEmailAsync(Guid companyId, string email, Guid? excludeUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Admin user-management: registers a newly created User for insertion - the same
+    /// Add-then-SaveChangesAsync-via-IUnitOfWork split every other repository in this codebase uses
+    /// (e.g. IEligibilityPolicyRepository.Add).</summary>
+    void Add(User user);
 }

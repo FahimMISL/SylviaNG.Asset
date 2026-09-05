@@ -66,28 +66,13 @@ public static class ApprovalWorkflowStageMapper
         return result;
     }
 
-    /// <summary>The plan's overlapping-cost-range validation: no two Cost condition ranges across the
-    /// whole set of stages may overlap (Min/Max null = open-ended). Prevents an ambiguous workflow
-    /// where two different stages' cost thresholds both silently claim the same requisition amounts.</summary>
-    public static bool HasNoOverlappingCostRanges(IEnumerable<ApprovalWorkflowStageInput> stages)
-    {
-        var ranges = stages
-            .SelectMany(s => s.Conditions)
-            .Where(c => c.ConditionType == Domain.Enums.ApprovalConditionType.Cost)
-            .Select(c => (Min: c.MinCost ?? decimal.MinValue, Max: c.MaxCost ?? decimal.MaxValue))
-            .ToList();
-
-        for (var i = 0; i < ranges.Count; i++)
-        {
-            for (var j = i + 1; j < ranges.Count; j++)
-            {
-                if (ranges[i].Min <= ranges[j].Max && ranges[j].Min <= ranges[i].Max)
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
+    // A prior "no two Cost condition ranges may overlap" validation used to live here. Removed: it
+    // rejected the exact shape a real cumulative/escalating approval chain requires - e.g. Department
+    // Head applying to everything above 20,000 (open-ended, no MaxCost) *and* CEO applying to
+    // everything above 100,000, which necessarily overlap above 100,000 since Department Head must
+    // stay in the chain there too, not get replaced by CEO. ApprovalWorkflowEngine.IsStageApplicable
+    // already evaluates each stage's conditions independently and fires every stage whose conditions
+    // are satisfied, in StageOrder - overlapping Cost ranges across stages isn't ambiguous to it, it's
+    // exactly how a multi-tier escalation is expressed. ApprovalWorkflowRoutingMode (Sequential/
+    // Parallel/Conditional) doesn't change this - it's UI-label-only and never branches the engine.
 }

@@ -11,6 +11,15 @@ public record RequisitionItemDto(Guid Id, string ItemName, int Quantity, Guid? C
     public static RequisitionItemDto FromEntity(RequisitionItem i) => new(i.Id, i.ItemName, i.Quantity, i.CategoryItemId);
 }
 
+/// <summary>Shared "Item" column text for every requisition list row (My/Department Requisitions,
+/// Search, Pending Approvals) - e.g. "Laptop x2, Monitor x1". Kept in one place so the four list
+/// DTOs can't drift on formatting.</summary>
+public static class RequisitionItemsSummary
+{
+    public static string Describe(IEnumerable<RequisitionItem> items) =>
+        string.Join(", ", items.Select(i => $"{i.ItemName} x{i.Quantity}"));
+}
+
 public record RequisitionFieldValueDto(Guid FieldDefinitionId, string Label, string? Value)
 {
     public static RequisitionFieldValueDto FromEntity(RequisitionFieldValue v) => new(
@@ -25,12 +34,27 @@ public record RequisitionStatusHistoryDto(
         h.FromStatus?.ToString(), h.ToStatus.ToString(), h.ActorUserId, h.ActorName, h.ActorRole, h.Comment, h.CreatedAtUtc);
 }
 
-/// <summary>US-007: attachment metadata - no blob/content here, just what the requisition detail list needs.</summary>
+/// <summary>US-007 / Feature 13: document metadata - no blob/content here, just what the requisition
+/// detail list needs. StoragePath is deliberately never exposed - the frontend only ever addresses an
+/// attachment by Id through the download endpoint. IsLatestVersion is computed here (not stored) by
+/// comparing against the highest Version among non-deleted siblings sharing this row's DocumentType -
+/// it can never drift out of sync the way a stored flag could.</summary>
 public record RequisitionAttachmentDto(
-    Guid Id, string FileName, string ContentType, long SizeBytes, string UploadedByName, DateTime UploadedAtUtc)
+    Guid Id, string FileName, string ContentType, long SizeBytes, string UploadedByName, DateTime UploadedAtUtc,
+    string DocumentType, int Version, bool IsLatestVersion)
 {
-    public static RequisitionAttachmentDto FromEntity(RequisitionAttachment a) => new(
-        a.Id, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByName, a.CreatedAtUtc);
+    public static RequisitionAttachmentDto FromEntity(RequisitionAttachment a, IEnumerable<RequisitionAttachment> siblings)
+    {
+        var latestVersionInLineage = siblings
+            .Where(s => !s.IsDeleted && s.DocumentType == a.DocumentType)
+            .Select(s => s.Version)
+            .DefaultIfEmpty(a.Version)
+            .Max();
+
+        return new(
+            a.Id, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByName, a.CreatedAtUtc,
+            a.DocumentType.ToString(), a.Version, !a.IsDeleted && a.Version == latestVersionInLineage);
+    }
 }
 
 public record RequisitionDto(
@@ -102,7 +126,9 @@ public record RequisitionDto(
         r.Items.Select(RequisitionItemDto.FromEntity).ToList(),
         r.FieldValues.Select(RequisitionFieldValueDto.FromEntity).ToList(),
         r.StatusHistory.Select(RequisitionStatusHistoryDto.FromEntity).ToList(),
-        r.Attachments.Select(RequisitionAttachmentDto.FromEntity).ToList(),
+        // Feature 13: soft-deleted rows never appear in this list; r.Attachments (the full, unfiltered
+        // set) is still passed as sibling context so IsLatestVersion is computed correctly.
+        r.Attachments.Where(a => !a.IsDeleted).Select(a => RequisitionAttachmentDto.FromEntity(a, r.Attachments)).ToList(),
         r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct),
         ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null);
 }
@@ -116,12 +142,16 @@ public record RequisitionSummaryDto(
     DateTime? NeedByDate,
     decimal EstimatedCost,
     DateTime CreatedAtUtc,
+    /// <summary>Null until the requisition is actually submitted (still a Draft) - reuses the same
+    /// Requisition.SubmittedAtUtc the detail page's own "Submitted" field already reads, not a new field.</summary>
+    DateTime? SubmittedAtUtc,
     int ItemCount,
+    string ItemsSummary,
     string? RequesterName)
 {
     public static RequisitionSummaryDto FromEntity(Requisition r) => new(
         r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(), r.Priority.ToString(),
-        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count, r.RequestedByUser?.FullName);
+        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.SubmittedAtUtc, r.Items.Count, RequisitionItemsSummary.Describe(r.Items), r.RequestedByUser?.FullName);
 }
 
 /// <summary>Feature 11: one search result row. ApprovalStatus/ProcurementStatus reuse
@@ -138,13 +168,20 @@ public record RequisitionSearchResultDto(
     DateTime? NeedByDate,
     decimal EstimatedCost,
     DateTime CreatedAtUtc,
+    DateTime? SubmittedAtUtc,
     int ItemCount,
+    string ItemsSummary,
     string? RequesterName,
     string? Department)
 {
     public static RequisitionSearchResultDto FromEntity(Requisition r) => new(
         r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(),
         ReportingCalculations.DescribeApprovalStatus(r), ReportingCalculations.DescribeProcurementStatus(r),
-        r.Priority.ToString(), r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count,
-        r.RequestedByUser?.FullName, r.RequestedByUser?.Department);
+        r.Priority.ToString(), r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.SubmittedAtUtc, r.Items.Count,
+        RequisitionItemsSummary.Describe(r.Items), r.RequestedByUser?.FullName, r.RequestedByUser?.Department);
 }
+
+/// <summary>Feature 11.5: lets the frontend self-check the caller's own Search/View grant (sidebar
+/// visibility, route guard) without needing Module=Rbac access - mirrors
+/// EligibilityPolicyMyPermissionsDto's same self-check pattern.</summary>
+public record SearchMyPermissionDto(bool CanView, bool IsSystemAdmin);

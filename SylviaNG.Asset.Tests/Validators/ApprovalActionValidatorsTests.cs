@@ -6,10 +6,8 @@ using RMS.Application.Features.Approvals.DTOs;
 
 namespace SylviaNG.Assets.Tests.Validators;
 
-/// <summary>Comment and decline-reason are both optional on every approval action - there's no
-/// Procurement Officer feature yet to be a real cost source, and requiring a comment/reason on
-/// every action was premature ahead of that being built out. See ApproveApprovalCommandValidator's
-/// remarks.</summary>
+/// <summary>Comment and decline-reason are both optional on every approval action - requiring one
+/// on every action was premature. See ApproveApprovalCommandValidator's remarks.</summary>
 public class ApprovalActionValidatorsTests
 {
     [Theory]
@@ -19,22 +17,11 @@ public class ApprovalActionValidatorsTests
     public void ApproveValidator_WithAnyLengthComment_HasNoCommentError(string? comment)
     {
         var validator = new ApproveApprovalCommandValidator();
-        var command = new ApproveApprovalCommand(Guid.NewGuid(), comment!, null);
+        var command = new ApproveApprovalCommand(Guid.NewGuid(), comment!);
 
         var result = validator.Validate(command);
 
         result.Errors.Should().NotContain(e => e.PropertyName == "Comment");
-    }
-
-    [Fact]
-    public void ApproveValidator_WithEstimatedCostZeroOrNegative_HasError()
-    {
-        var validator = new ApproveApprovalCommandValidator();
-        var command = new ApproveApprovalCommand(Guid.NewGuid(), "", 0m);
-
-        var result = validator.Validate(command);
-
-        result.IsValid.Should().BeFalse();
     }
 
     [Fact]

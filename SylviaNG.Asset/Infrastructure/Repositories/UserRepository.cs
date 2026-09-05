@@ -37,4 +37,17 @@ public class UserRepository : IUserRepository
 
         return query.OrderBy(u => u.FullName).ToListAsync(cancellationToken);
     }
+
+    public Task<bool> ExistsByEmailAsync(Guid companyId, string email, Guid? excludeUserId, CancellationToken cancellationToken = default)
+    {
+        var query = _context.Users.Where(u => u.CompanyId == companyId && u.Email.ToLower() == email.ToLower());
+        if (excludeUserId.HasValue)
+        {
+            query = query.Where(u => u.Id != excludeUserId.Value);
+        }
+
+        return query.AnyAsync(cancellationToken);
+    }
+
+    public void Add(User user) => _context.Users.Add(user);
 }

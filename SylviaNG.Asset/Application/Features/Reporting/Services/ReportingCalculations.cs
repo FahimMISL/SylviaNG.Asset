@@ -46,6 +46,16 @@ public static class ReportingCalculations
         RequisitionStatus.InProcurement, RequisitionStatus.PartiallyFulfilled,
     ];
 
+    /// <summary>My Report/All Users Report only - unlike ApprovedFamilyStatuses (which folds
+    /// PartiallyApproved into "approved" for the Executive Summary's simpler KPI), these two reports
+    /// show Partially Approved as its own distinct category the user explicitly asked for, so it's
+    /// deliberately excluded here to avoid double-counting the same requisition in both buckets.</summary>
+    private static readonly HashSet<RequisitionStatus> FullyApprovedStatuses =
+    [
+        RequisitionStatus.Approved, RequisitionStatus.InProcurement, RequisitionStatus.PartiallyFulfilled,
+        RequisitionStatus.Fulfilled, RequisitionStatus.Closed,
+    ];
+
     public const string EligibilityBlockNote =
         "Eligibility policy blocks are not logged as a historical event in the current system - a submission that fails an eligibility check never gets persisted, so a blocked-request count can't be reliably reported here.";
 
@@ -194,5 +204,62 @@ public static class ReportingCalculations
             total, pending, approved, rejected, fulfilled, pendingApprovals, procurementActive,
             manpowerCount, manpowerPositions, averageApprovalDays, trend, EligibilityBlockNote,
             topDepartments, categoryBreakdown);
+    }
+
+    private static DateTime StartOfWeek(DateTime dt)
+    {
+        var diff = (7 + (dt.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return dt.Date.AddDays(-diff);
+    }
+
+    /// <summary>My Report/All Users Report: Weekly/Monthly/Yearly buckets off SubmittedAtUtc, each
+    /// broken down by outcome (not just submission volume, unlike MonthlyTrendPointDto) so the graph
+    /// can plot approved/rejected/partially-approved as separate series.</summary>
+    public static List<PeriodTrendPointDto> BuildTrend(List<Requisition> requisitions, ReportPeriod period)
+    {
+        var withSubmission = requisitions.Where(r => r.SubmittedAtUtc.HasValue).ToList();
+
+        var grouped = period switch
+        {
+            ReportPeriod.Weekly => withSubmission.GroupBy(r => StartOfWeek(r.SubmittedAtUtc!.Value)),
+            ReportPeriod.Yearly => withSubmission.GroupBy(r => new DateTime(r.SubmittedAtUtc!.Value.Year, 1, 1)),
+            _ => withSubmission.GroupBy(r => new DateTime(r.SubmittedAtUtc!.Value.Year, r.SubmittedAtUtc.Value.Month, 1)),
+        };
+
+        string LabelFor(DateTime bucketStart) => period switch
+        {
+            ReportPeriod.Weekly => bucketStart.ToString("MMM d, yyyy"),
+            ReportPeriod.Yearly => bucketStart.Year.ToString(),
+            _ => bucketStart.ToString("MMM yyyy"),
+        };
+
+        return grouped
+            .OrderBy(g => g.Key)
+            .Select(g => new PeriodTrendPointDto(
+                LabelFor(g.Key),
+                g.Count(),
+                g.Count(r => FullyApprovedStatuses.Contains(r.Status)),
+                g.Count(r => r.Status == RequisitionStatus.Rejected),
+                g.Count(r => r.Status == RequisitionStatus.PartiallyApproved),
+                g.Count(r => FulfilledFamilyStatuses.Contains(r.Status))))
+            .ToList();
+    }
+
+    /// <summary>One person's (or, for the All Users Report's own aggregate row, everyone-in-scope's)
+    /// requisition history. requisitions is whatever the caller already scoped - one user's own list
+    /// for My Report, or a company/department slice per person for All Users Report.</summary>
+    public static PersonReportDto BuildPersonReport(
+        Guid? userId, string userName, string? department, List<Requisition> requisitions, ReportPeriod period)
+    {
+        var total = requisitions.Count;
+        var pending = requisitions.Count(r => PendingStatuses.Contains(r.Status));
+        var approved = requisitions.Count(r => FullyApprovedStatuses.Contains(r.Status));
+        var rejected = requisitions.Count(r => r.Status == RequisitionStatus.Rejected);
+        var partiallyApproved = requisitions.Count(r => r.Status == RequisitionStatus.PartiallyApproved);
+        var fulfilled = requisitions.Count(r => FulfilledFamilyStatuses.Contains(r.Status));
+
+        return new PersonReportDto(
+            userId, userName, department, total, pending, approved, rejected, partiallyApproved, fulfilled,
+            BuildTrend(requisitions, period));
     }
 }

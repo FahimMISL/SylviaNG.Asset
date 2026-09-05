@@ -83,7 +83,7 @@ public class ApproveApprovalRoleFanoutTests
             _requisitionApprovalRepository.Object, _delegationRepository.Object, _currentUser.Object, _auditLogger.Object, _unitOfWork.Object, engine,
             _notificationService.Object);
 
-        await handler.Handle(new ApproveApprovalCommand(approval.Id, "Approved on behalf of the department.", null), CancellationToken.None);
+        await handler.Handle(new ApproveApprovalCommand(approval.Id, "Approved on behalf of the department."), CancellationToken.None);
 
         // The acting assignment (deptHead2) recorded its own action.
         assignmentDh2.HasActed.Should().BeTrue();

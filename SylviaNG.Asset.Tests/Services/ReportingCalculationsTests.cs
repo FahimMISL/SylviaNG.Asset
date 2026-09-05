@@ -191,4 +191,90 @@ public class ReportingCalculationsTests
             new CategoryCountDto("Manpower", 2),
             new CategoryCountDto("IT Equipment", 1));
     }
+
+    [Fact]
+    public void BuildPersonReport_PartiallyApprovedIsCountedSeparately_NotFoldedIntoApproved()
+    {
+        // Unlike BuildSummary's ApprovedFamilyStatuses, My Report/All Users Report show Partially
+        // Approved as its own distinct category the user explicitly asked for.
+        var approved = NewRequisition(RequisitionStatus.Approved);
+        var partiallyApproved = NewRequisition(RequisitionStatus.PartiallyApproved);
+        var rejected = NewRequisition(RequisitionStatus.Rejected);
+
+        var report = ReportingCalculations.BuildPersonReport(
+            Guid.NewGuid(), "Emma Employee", "IT", [approved, partiallyApproved, rejected], ReportPeriod.Monthly);
+
+        report.TotalCount.Should().Be(3);
+        report.ApprovedCount.Should().Be(1);
+        report.PartiallyApprovedCount.Should().Be(1);
+        report.RejectedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void BuildTrend_Monthly_GroupsBySubmissionMonth_WithPerOutcomeCounts()
+    {
+        var approvedInJan = NewRequisition(RequisitionStatus.Approved);
+        approvedInJan.SubmittedAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+        var rejectedInJan = NewRequisition(RequisitionStatus.Rejected);
+        rejectedInJan.SubmittedAtUtc = new DateTime(2026, 1, 20, 0, 0, 0, DateTimeKind.Utc);
+        var approvedInFeb = NewRequisition(RequisitionStatus.Approved);
+        approvedInFeb.SubmittedAtUtc = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var trend = ReportingCalculations.BuildTrend([approvedInJan, rejectedInJan, approvedInFeb], ReportPeriod.Monthly);
+
+        trend.Should().HaveCount(2);
+        trend[0].Label.Should().Be("Jan 2026");
+        trend[0].SubmittedCount.Should().Be(2);
+        trend[0].ApprovedCount.Should().Be(1);
+        trend[0].RejectedCount.Should().Be(1);
+        trend[1].Label.Should().Be("Feb 2026");
+        trend[1].SubmittedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void BuildTrend_Weekly_GroupsBySubmissionWeekStart()
+    {
+        // 2026-01-05 and 2026-01-07 both fall in the Monday-Jan-5-2026 week; 2026-01-12 starts the next.
+        var sameWeek1 = NewRequisition(RequisitionStatus.Approved);
+        sameWeek1.SubmittedAtUtc = new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc);
+        var sameWeek2 = NewRequisition(RequisitionStatus.Approved);
+        sameWeek2.SubmittedAtUtc = new DateTime(2026, 1, 7, 0, 0, 0, DateTimeKind.Utc);
+        var nextWeek = NewRequisition(RequisitionStatus.Approved);
+        nextWeek.SubmittedAtUtc = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc);
+
+        var trend = ReportingCalculations.BuildTrend([sameWeek1, sameWeek2, nextWeek], ReportPeriod.Weekly);
+
+        trend.Should().HaveCount(2);
+        trend[0].SubmittedCount.Should().Be(2);
+        trend[1].SubmittedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void BuildTrend_Yearly_GroupsBySubmissionYear()
+    {
+        var in2025 = NewRequisition(RequisitionStatus.Approved);
+        in2025.SubmittedAtUtc = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var in2026a = NewRequisition(RequisitionStatus.Approved);
+        in2026a.SubmittedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var in2026b = NewRequisition(RequisitionStatus.Rejected);
+        in2026b.SubmittedAtUtc = new DateTime(2026, 12, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var trend = ReportingCalculations.BuildTrend([in2025, in2026a, in2026b], ReportPeriod.Yearly);
+
+        trend.Should().HaveCount(2);
+        trend[0].Label.Should().Be("2025");
+        trend[0].SubmittedCount.Should().Be(1);
+        trend[1].Label.Should().Be("2026");
+        trend[1].SubmittedCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void BuildTrend_NeverSubmitted_ExcludedFromEveryBucket()
+    {
+        var draft = NewRequisition(RequisitionStatus.Draft); // SubmittedAtUtc left null
+
+        var trend = ReportingCalculations.BuildTrend([draft], ReportPeriod.Monthly);
+
+        trend.Should().BeEmpty();
+    }
 }

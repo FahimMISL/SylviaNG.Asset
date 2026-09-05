@@ -25,5 +25,6 @@ public interface IAuditLogRepository
         string? department,
         int page,
         int pageSize,
+        bool sortDescending = true,
         CancellationToken cancellationToken = default);
 }

@@ -23,8 +23,10 @@ public interface IApprovalWorkflowRepository
     void AddVersion(ApprovalWorkflowVersion version);
 
     /// <summary>Wholesale-replaces a draft (unpublished) version's nested stages (and their
-    /// approvers/conditions/SLA) and category links, deleting whatever isn't in the new set.</summary>
-    void ReplaceVersionStages(ApprovalWorkflowVersion version, List<ApprovalWorkflowStage> newStages);
+    /// approvers/conditions/SLA), deleting whatever isn't in the new set. Async because it flushes the
+    /// deletes with their own SaveChanges before queuing the inserts - see the implementation for why
+    /// that intermediate flush is required, not optional.</summary>
+    Task ReplaceVersionStagesAsync(ApprovalWorkflowVersion version, List<ApprovalWorkflowStage> newStages, CancellationToken cancellationToken = default);
     void ReplaceVersionCategoryLinks(ApprovalWorkflowVersion version, List<Guid> categoryIds);
 
     void RemoveVersion(ApprovalWorkflowVersion version);

@@ -52,6 +52,11 @@ public class DelegateApprovalActionCommandHandler : IRequestHandler<DelegateAppr
             throw new NotFoundException(nameof(User), request.DelegateToUserId);
         }
 
+        if (delegateUser.Role == UserRole.Employee)
+        {
+            throw new ConflictException("This approval can only be delegated to someone who can act as an approver, not a plain Employee.");
+        }
+
         // Directly mutates AssignedUserId, keeping OriginalApproverUserId for provenance - permanent,
         // no "period" to revert (unlike ApprovalDelegation), per the plan.
         var originalAssignee = assignment.AssignedUserId;

@@ -22,10 +22,10 @@ public class EligibilityPolicyRepository : IEligibilityPolicyRepository
             .Include(p => p.ReplacementRule);
 
     public Task<EligibilityPolicy?> GetByIdAsync(Guid companyId, Guid id, CancellationToken cancellationToken = default) =>
-        QueryWithDetails().FirstOrDefaultAsync(p => p.CompanyId == companyId && p.Id == id, cancellationToken);
+        QueryWithDetails().FirstOrDefaultAsync(p => p.CompanyId == companyId && p.Id == id && !p.IsDeleted, cancellationToken);
 
     public Task<List<EligibilityPolicy>> GetAllAsync(Guid companyId, CancellationToken cancellationToken = default) =>
-        QueryWithDetails().Where(p => p.CompanyId == companyId).OrderBy(p => p.Name).ToListAsync(cancellationToken);
+        QueryWithDetails().Where(p => p.CompanyId == companyId && !p.IsDeleted).OrderBy(p => p.Name).ToListAsync(cancellationToken);
 
     public Task<bool> ActivePolicyExistsAsync(
         Guid companyId, Guid categoryId, Guid? categoryItemId, Guid? excludeId, CancellationToken cancellationToken = default) =>
@@ -34,6 +34,7 @@ public class EligibilityPolicyRepository : IEligibilityPolicyRepository
                 && p.CategoryId == categoryId
                 && p.CategoryItemId == categoryItemId
                 && p.IsActive
+                && !p.IsDeleted
                 && (excludeId == null || p.Id != excludeId),
             cancellationToken);
 
@@ -43,7 +44,7 @@ public class EligibilityPolicyRepository : IEligibilityPolicyRepository
         if (categoryItemId.HasValue)
         {
             var itemPolicy = await QueryWithDetails().FirstOrDefaultAsync(
-                p => p.CompanyId == companyId && p.CategoryId == categoryId && p.CategoryItemId == categoryItemId && p.IsActive,
+                p => p.CompanyId == companyId && p.CategoryId == categoryId && p.CategoryItemId == categoryItemId && p.IsActive && !p.IsDeleted,
                 cancellationToken);
             if (itemPolicy is not null)
             {
@@ -52,9 +53,25 @@ public class EligibilityPolicyRepository : IEligibilityPolicyRepository
         }
 
         return await QueryWithDetails().FirstOrDefaultAsync(
-            p => p.CompanyId == companyId && p.CategoryId == categoryId && p.CategoryItemId == null && p.IsActive,
+            p => p.CompanyId == companyId && p.CategoryId == categoryId && p.CategoryItemId == null && p.IsActive && !p.IsDeleted,
             cancellationToken);
     }
+
+    public Task<List<EligibilityPolicy>> GetTrashedAsync(Guid companyId, CancellationToken cancellationToken = default) =>
+        QueryWithDetails()
+            .Where(p => p.CompanyId == companyId && p.IsDeleted)
+            .OrderByDescending(p => p.DeletedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public Task<EligibilityPolicy?> GetByIdIncludingDeletedAsync(Guid companyId, Guid id, CancellationToken cancellationToken = default) =>
+        QueryWithDetails().FirstOrDefaultAsync(p => p.CompanyId == companyId && p.Id == id, cancellationToken);
+
+    public Task<List<EligibilityPolicy>> GetExpiredTrashAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default) =>
+        _context.EligibilityPolicies
+            .Include(p => p.Criteria)
+            .Include(p => p.ReplacementRule)
+            .Where(p => p.IsDeleted && p.DeletedAtUtc != null && p.DeletedAtUtc <= cutoffUtc)
+            .ToListAsync(cancellationToken);
 
     public void Add(EligibilityPolicy policy) => _context.EligibilityPolicies.Add(policy);
 

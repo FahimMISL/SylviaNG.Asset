@@ -10,6 +10,7 @@ public record AuditLogEntryDto(
     string ActionType,
     string EntityName,
     Guid EntityId,
+    string? Target,
     string? Details,
     string? IpAddress)
 {
@@ -23,6 +24,7 @@ public record AuditLogEntryDto(
         entity.ActionType,
         entity.EntityName,
         entity.EntityId,
+        entity.TargetName,
         entity.Details,
         entity.IpAddress);
 }

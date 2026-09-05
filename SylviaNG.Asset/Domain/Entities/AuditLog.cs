@@ -25,6 +25,15 @@ public class AuditLog
     public string ActionType { get; set; } = string.Empty;
     public string EntityName { get; set; } = string.Empty;
     public Guid EntityId { get; set; }
+
+    /// <summary>The human-readable name of whoever/whatever this action was actually done TO - e.g.
+    /// the affected user's name for UserRoleChanged, distinct from ActorName (who DID it). Same
+    /// plain-string, captured-at-write-time convention as ActorName: survives the target's own later
+    /// deletion/rename, and needs no join to render. Null (rendered as "—") wherever a target isn't
+    /// meaningful for that ActionType, or hasn't been wired up for it yet - this is populated
+    /// incrementally per action type, not retroactively for historical rows.</summary>
+    public string? TargetName { get; set; }
+
     public string? Details { get; set; }
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
     public string? IpAddress { get; set; }

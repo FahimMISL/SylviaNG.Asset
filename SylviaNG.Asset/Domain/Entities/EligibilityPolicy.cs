@@ -30,6 +30,14 @@ public class EligibilityPolicy : AuditableEntity
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Soft-delete (Trash). A policy with IsDeleted=true is excluded from every normal
+    /// list/detail/resolution query - see EligibilityPolicyRepository - but its row (and its Criteria/
+    /// ReplacementRule children) stay in the database, recoverable via Restore() until
+    /// EligibilityPolicyTrashPurgeService permanently removes it after the retention window.</summary>
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
+    public Guid? DeletedByUserId { get; set; }
+
     public List<EligibilityPolicyCriterion> Criteria { get; set; } = new();
 
     /// <summary>0..1 - presence of this row means a replacement/waiting-period restriction is
@@ -39,4 +47,18 @@ public class EligibilityPolicy : AuditableEntity
     public void Activate() => IsActive = true;
 
     public void Deactivate() => IsActive = false;
+
+    public void Delete(Guid? actorUserId)
+    {
+        IsDeleted = true;
+        DeletedAtUtc = DateTime.UtcNow;
+        DeletedByUserId = actorUserId;
+    }
+
+    public void Restore()
+    {
+        IsDeleted = false;
+        DeletedAtUtc = null;
+        DeletedByUserId = null;
+    }
 }

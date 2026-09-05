@@ -2,7 +2,9 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RMS.Application.Features.Reporting.DTOs;
+using RMS.Application.Features.Reporting.Queries.GetAllUsersReport;
 using RMS.Application.Features.Reporting.Queries.GetExecutiveSummary;
+using RMS.Application.Features.Reporting.Queries.GetMyReport;
 using RMS.Application.Features.Reporting.Queries.GetOperationalReport;
 using RMS.Domain.Enums;
 
@@ -53,6 +55,20 @@ public class ReportingController : ControllerBase
     public async Task<ActionResult<ExecutiveSummaryDto>> GetExecutiveSummary(CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetExecutiveSummaryQuery(), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("my-report")]
+    public async Task<ActionResult<PersonReportDto>> GetMyReport([FromQuery] ReportPeriod period, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetMyReportQuery(period), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("all-users-report")]
+    public async Task<ActionResult<AllUsersReportDto>> GetAllUsersReport([FromQuery] ReportPeriod period, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetAllUsersReportQuery(period), cancellationToken);
         return Ok(result);
     }
 }

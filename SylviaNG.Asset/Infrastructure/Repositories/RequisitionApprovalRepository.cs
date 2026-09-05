@@ -43,6 +43,7 @@ public class RequisitionApprovalRepository : IRequisitionApprovalRepository
         _context.RequisitionApprovalAssignments
             .Include(x => x.RequisitionApproval!).ThenInclude(a => a.ApprovalWorkflowStage!)
             .Include(x => x.RequisitionApproval!).ThenInclude(a => a.RequisitionApprovalProcess!).ThenInclude(p => p.Requisition!).ThenInclude(r => r.Category)
+            .Include(x => x.RequisitionApproval!).ThenInclude(a => a.RequisitionApprovalProcess!).ThenInclude(p => p.Requisition!).ThenInclude(r => r.Items).ThenInclude(i => i.CategoryItem)
             .Where(x => candidateAssignedUserIds.Contains(x.AssignedUserId)
                 && !x.HasActed
                 && (x.RequisitionApproval!.Status == RequisitionApprovalStatus.Pending

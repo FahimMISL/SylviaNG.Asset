@@ -6,7 +6,7 @@ using RMS.Domain.Enums;
 
 namespace RMS.Application.Features.Rbac.Commands.UpdatePermissionMatrix;
 
-public class UpdatePermissionMatrixCommandHandler : IRequestHandler<UpdatePermissionMatrixCommand>
+public class UpdatePermissionMatrixCommandHandler : IRequestHandler<UpdatePermissionMatrixCommand, Unit>
 {
     private readonly IRolePermissionRepository _rolePermissionRepository;
     private readonly ICurrentUserService _currentUser;
@@ -22,7 +22,7 @@ public class UpdatePermissionMatrixCommandHandler : IRequestHandler<UpdatePermis
         _unitOfWork = unitOfWork;
     }
 
-    public async Task Handle(UpdatePermissionMatrixCommand request, CancellationToken cancellationToken)
+    public async Task<Unit> Handle(UpdatePermissionMatrixCommand request, CancellationToken cancellationToken)
     {
         var companyId = _currentUser.CompanyId ?? throw new ForbiddenException();
 
@@ -73,7 +73,9 @@ public class UpdatePermissionMatrixCommandHandler : IRequestHandler<UpdatePermis
         {
             await _auditLogger.LogAsync(
                 "PermissionMatrixUpdated", nameof(RolePermission), Guid.Empty,
-                $"Role={request.Role}; Changes: {string.Join(", ", changed)}", cancellationToken);
+                $"Role={request.Role}; Changes: {string.Join(", ", changed)}", cancellationToken, target: request.Role.ToString());
         }
+
+        return Unit.Value;
     }
 }

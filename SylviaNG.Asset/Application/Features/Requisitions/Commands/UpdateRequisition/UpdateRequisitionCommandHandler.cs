@@ -71,6 +71,8 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
             throw new ConflictException("This category is not currently active and cannot be used for a requisition.");
         }
 
+        RequisitionFieldValidation.EnsureRequesterAllowedForCategory(category, _currentUser.Role);
+
         RequisitionFieldValidation.EnsureValid(category, request.FieldValues, request.CostCenterId, request.ProjectCode, request.Submit);
 
         var resolvedItems = RequisitionFieldValidation.ResolveItems(category, request.Items, request.Submit);
@@ -100,13 +102,16 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         // FR-RR-010: field-by-field before -> after diff for the amendment audit trail. Captured
         // before mutation; only meaningful (and only logged) for an actual SentBack amendment -
         // a plain Draft edit already gets its own "RequisitionDraftSaved"/"RequisitionSubmitted" entry.
-        var diff = isAmendment ? BuildDiff(requisition, request, category) : null;
+        var diff = isAmendment ? BuildDiff(requisition, request, category, resolvedItems) : null;
 
         requisition.CategoryId = request.CategoryId;
         requisition.CategoryVersionNumber = category.CurrentVersionNumber;
         requisition.Priority = request.Priority;
         requisition.NeedByDate = request.NeedByDate;
-        requisition.EstimatedCost = request.EstimatedCost;
+        // Same rule as CreateRequisitionCommandHandler: cost is always the Admin's catalog price x
+        // quantity, recomputed from whatever items this edit actually leaves the requisition with -
+        // never a typed-in number, so an amendment can't leave a stale/manual cost behind.
+        requisition.EstimatedCost = RequisitionFieldValidation.ComputeEstimatedCost(category, resolvedItems);
         requisition.Justification = request.Justification;
         requisition.UrgencyJustification = request.UrgencyJustification;
         requisition.CostCenterId = request.CostCenterId;
@@ -162,6 +167,18 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
                 nameof(Requisition), requisition.Id, $"CategoryId={requisition.CategoryId}", cancellationToken);
         }
 
+        // Feature 8.1: both ResolveAndStartAsync and ResumeAfterSendBackAsync above unconditionally
+        // transition Submitted -> UnderReview via Requisition.BeginReview before resolving/starting a
+        // stage - a real, distinct transition RequisitionStatusHistories already records for both the
+        // plain-submit and SentBack-resubmit paths, but the Audit Trail previously never surfaced it
+        // as its own event (see the same fix in CreateRequisitionCommandHandler).
+        if (request.Submit)
+        {
+            await _auditLogger.LogAsync(
+                "RequisitionUnderReview", nameof(Requisition), requisition.Id,
+                "Approval workflow started; requisition moved to Under Review.", cancellationToken);
+        }
+
         // Feature 9 (US-028): confirmation to the requestor that the (re)submission went through,
         // sent alongside whatever the approval engine queued - only now, after SaveChangesAsync.
         if (request.Submit)
@@ -184,7 +201,7 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
         return RequisitionDto.FromEntity(saved);
     }
 
-    private static string BuildDiff(Requisition before, UpdateRequisitionCommand after, RequisitionCategory category)
+    private static string BuildDiff(Requisition before, UpdateRequisitionCommand after, RequisitionCategory category, List<RequisitionItem> resolvedItems)
     {
         var changes = new List<string>();
 
@@ -198,7 +215,9 @@ public class UpdateRequisitionCommandHandler : IRequestHandler<UpdateRequisition
 
         Track(nameof(Requisition.Priority), before.Priority, after.Priority);
         Track(nameof(Requisition.NeedByDate), before.NeedByDate?.Date, after.NeedByDate?.Date);
-        Track(nameof(Requisition.EstimatedCost), before.EstimatedCost, after.EstimatedCost);
+        // Cost is derived (catalog price x quantity), not user-entered - diff against what it will
+        // recompute to given this edit's items, not anything from the request body directly.
+        Track(nameof(Requisition.EstimatedCost), before.EstimatedCost, RequisitionFieldValidation.ComputeEstimatedCost(category, resolvedItems));
         Track(nameof(Requisition.Justification), before.Justification, after.Justification);
         Track(nameof(Requisition.CostCenterId), before.CostCenterId, after.CostCenterId);
         Track(nameof(Requisition.ProjectCode), before.ProjectCode, after.ProjectCode);
