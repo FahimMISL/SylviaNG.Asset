@@ -50,6 +50,16 @@ namespace SylviaNG.Assets.Middlewares
                 }
                 await HandleExceptionAsync(context, StatusCodes.Status403Forbidden, ex.Message);
             }
+            catch (InvalidOperationException ex)
+            {
+                // A domain transition-guard rejection (e.g. Requisition.Cancel/Submit/Approve throwing
+                // because the entity is no longer in a status that allows it) - a legitimate, expected
+                // outcome of a race (someone else acted first), not a bug, so it gets ex.Message and a
+                // 409 like ConflictException rather than falling into the generic 500 case below, which
+                // used to surface as an unhelpful "contact support" message for this exact scenario.
+                _logger.LogWarning(ex, "Invalid state transition.");
+                await HandleExceptionAsync(context, StatusCodes.Status409Conflict, ex.Message);
+            }
             catch (FluentValidation.ValidationException ex)
             {
                 _logger.LogWarning(ex, "Validation failed.");

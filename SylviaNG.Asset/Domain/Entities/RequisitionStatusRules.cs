@@ -17,7 +17,11 @@ public static class RequisitionStatusRules
     {
         [RequisitionStatus.Draft] = [RequisitionStatus.Submitted],
         [RequisitionStatus.Submitted] = [RequisitionStatus.UnderReview, RequisitionStatus.Cancelled],
-        [RequisitionStatus.UnderReview] = [RequisitionStatus.Approved, RequisitionStatus.Rejected, RequisitionStatus.PartiallyApproved, RequisitionStatus.SentBack],
+        // Cancelled is reachable from UnderReview too: ApprovalWorkflowEngine.ResolveAndStartAsync moves
+        // a requisition Submitted -> UnderReview automatically, in the same request as submission, before
+        // any human approver has looked at it - see Requisition.CanCancel for the additional
+        // no-approver-action-yet guard that keeps this from allowing a cancel mid-approval.
+        [RequisitionStatus.UnderReview] = [RequisitionStatus.Approved, RequisitionStatus.Rejected, RequisitionStatus.PartiallyApproved, RequisitionStatus.SentBack, RequisitionStatus.Cancelled],
         [RequisitionStatus.SentBack] = [RequisitionStatus.Submitted],
         [RequisitionStatus.Approved] = [RequisitionStatus.InProcurement],
         [RequisitionStatus.PartiallyApproved] = [RequisitionStatus.InProcurement],
