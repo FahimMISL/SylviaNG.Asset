@@ -2,7 +2,6 @@ using MediatR;
 using SylviaNG.Assets.Application.Common.Exceptions;
 using RMS.Application.Features.Approvals.DTOs;
 using RMS.Application.Interfaces;
-using RMS.Domain.Enums;
 
 namespace RMS.Application.Features.Approvals.Queries.GetPendingApprovals;
 
@@ -36,8 +35,7 @@ public class GetPendingApprovalsQueryHandler : IRequestHandler<GetPendingApprova
         var now = DateTime.UtcNow;
         return assignments
             .Select(a => PendingApprovalDto.FromEntity(a, isViaDelegation: a.AssignedUserId != userId, now))
-            .OrderByDescending(p => Enum.Parse<RequisitionPriority>(p.Priority))
-            .ThenBy(p => p.SubmittedAtUtc)
+            .OrderByDescending(p => p.SubmittedAtUtc)
             .ToList();
     }
 }

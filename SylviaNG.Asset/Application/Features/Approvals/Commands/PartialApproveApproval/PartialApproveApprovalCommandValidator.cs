@@ -1,15 +1,16 @@
 using FluentValidation;
-using RMS.Application.Features.Approvals.Services;
 
 namespace RMS.Application.Features.Approvals.Commands.PartialApproveApproval;
 
+/// <summary>Comment is intentionally optional here, same as ApproveApprovalCommandValidator - a
+/// partial approval already records its outcome in the per-item decisions (and their own optional
+/// DeclineReason), so forcing a separate 10-character justification comment on top added friction
+/// without adding information and blocked an otherwise fully valid partial approval.</summary>
 public class PartialApproveApprovalCommandValidator : AbstractValidator<PartialApproveApprovalCommand>
 {
     public PartialApproveApprovalCommandValidator()
     {
         RuleFor(c => c.ApprovalId).NotEmpty();
-        RuleFor(c => c.Comment).NotEmpty().MinimumLength(CommentValidation.MinimumLength)
-            .WithMessage($"Comment must be at least {CommentValidation.MinimumLength} characters.");
         RuleFor(c => c.Decisions).NotEmpty().WithMessage("At least one item decision is required.");
 
         RuleForEach(c => c.Decisions).ChildRules(decision =>

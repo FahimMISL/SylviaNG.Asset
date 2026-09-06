@@ -29,7 +29,7 @@ public static class RmsDevelopmentSeeder
             context.Users.Add(new User
             {
                 CompanyId = company.Id,
-                FullName = "Demo User (local dev stub)",
+                FullName = "Muhammad Hasan",
                 Email = "demo@rms.local",
                 Role = UserRole.SystemAdmin,
                 CreatedAtUtc = DateTime.UtcNow,
@@ -46,29 +46,29 @@ public static class RmsDevelopmentSeeder
         // has something real to differentiate against.
         var demoActors = new[]
         {
-            ("Emma Employee (dev stub)", "emma.employee@rms.local", UserRole.Employee,
+            ("Sazid", "emma.employee@rms.local", UserRole.Employee,
                 "Officer", "Software Engineer", EmploymentType.Permanent, "IT", "Head Office"),
-            ("Liam Manager (dev stub)", "liam.manager@rms.local", UserRole.LineManager,
+            ("Tauhid", "liam.manager@rms.local", UserRole.Manager,
                 "Manager", "IT Manager", EmploymentType.Permanent, "IT", "Head Office"),
-            ("Diana Head (dev stub)", "diana.head@rms.local", UserRole.DepartmentHead,
+            ("Emon", "diana.head@rms.local", UserRole.DepartmentHead,
                 "Manager", "Department Head", EmploymentType.Permanent, "IT", "Head Office"),
             // Feature 5: two of them, deliberately - rule 1 requires every Procurement Officer to see
             // every Approved requisition with no per-officer assignment, and the easiest way to prove
             // that live is to have two and confirm both see an identical, unfiltered queue.
-            ("Pat Procurement (dev stub)", "pat.procurement@rms.local", UserRole.ProcurementOfficer,
+            ("Jamil", "pat.procurement@rms.local", UserRole.ProcurementOfficer,
                 "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
-            ("Noah Procurement (dev stub)", "noah.procurement@rms.local", UserRole.ProcurementOfficer,
+            ("Junayed", "noah.procurement@rms.local", UserRole.ProcurementOfficer,
                 "Officer", "Procurement Officer", EmploymentType.Permanent, "Procurement", "Head Office"),
             // Feature 6: HrManager is an existing UserRole that's never been routed on before - the
             // Manpower Requisition approval workflow is Admin-configured (not hardcoded) but a
             // sensible default is "HR Review", assigned to HrManager rather than DepartmentHead,
             // since a Department Head submitting a manpower request must never end up approving
             // their own submission.
-            ("Hana HR (dev stub)", "hana.hr@rms.local", UserRole.HrManager,
+            ("Alamin", "hana.hr@rms.local", UserRole.HrManager,
                 "Manager", "HR Manager", EmploymentType.Permanent, "HR", "Head Office"),
             // Feature 7: Ceo is an existing UserRole that's never been routed on before - the
             // Executive Summary report is its first real use, needed to test CEO-only access.
-            ("Chris CEO (dev stub)", "chris.ceo@rms.local", UserRole.Ceo,
+            ("Nadim", "chris.ceo@rms.local", UserRole.Ceo,
                 "Executive", "Chief Executive Officer", EmploymentType.Permanent, "Executive", "Head Office"),
         };
 
@@ -123,12 +123,14 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.Dashboard, PermissionAction.View));
         grants.AddRange(Grants(UserRole.Employee, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Employee, PermissionModule.FileManagement, PermissionAction.View));
 
-        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionSetup, PermissionAction.View));
-        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
-        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
-        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Dashboard, PermissionAction.View));
-        grants.AddRange(Grants(UserRole.LineManager, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.RequisitionSetup, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.Dashboard, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Manager, PermissionModule.FileManagement, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Approve, PermissionAction.Delete));
@@ -136,6 +138,7 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Dashboard, PermissionAction.View));
         grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.DepartmentHead, PermissionModule.FileManagement, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
@@ -143,6 +146,7 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Dashboard, PermissionAction.View));
         grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.ProcurementOfficer, PermissionModule.FileManagement, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
@@ -150,6 +154,7 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Dashboard, PermissionAction.View));
         grants.AddRange(Grants(UserRole.HrManager, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.HrManager, PermissionModule.FileManagement, PermissionAction.View));
 
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionSetup, PermissionAction.View));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.RequisitionRequests, PermissionAction.View, PermissionAction.Create, PermissionAction.Edit, PermissionAction.Delete));
@@ -157,6 +162,7 @@ public static class RmsDevelopmentSeeder
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Notifications, PermissionAction.View, PermissionAction.Edit));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Dashboard, PermissionAction.View));
         grants.AddRange(Grants(UserRole.Ceo, PermissionModule.Search, PermissionAction.View));
+        grants.AddRange(Grants(UserRole.Ceo, PermissionModule.FileManagement, PermissionAction.View));
 
         foreach (var (role, module, action) in grants)
         {

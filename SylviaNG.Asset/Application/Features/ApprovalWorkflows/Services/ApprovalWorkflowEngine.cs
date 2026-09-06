@@ -74,10 +74,11 @@ public class ApprovalWorkflowEngine
         return await AdvanceToNextActionableStageAsync(process, requisition, orderedStages, actorUserId, actorName, actorRole, cancellationToken);
     }
 
-    /// <summary>Called once every required assignment on a stage has acted (IsStageComplete). If the
-    /// completed stage CapturesEstimatedCost, applies the captured value to Requisition.EstimatedCost
-    /// first, so any later stage's Cost condition sees the real number. Starts the next actionable
-    /// stage, or - if none remain - calls Requisition.Approve().</summary>
+    /// <summary>Called once every required assignment on a stage has acted (IsStageComplete). Starts
+    /// the next actionable stage, or - if none remain - calls Requisition.Approve(). Cost conditions on
+    /// later stages read Requisition.EstimatedCost directly - it's computed once, from the Admin's
+    /// catalog prices, when the requisition was created/last edited (see RequisitionFieldValidation.
+    /// ComputeEstimatedCost), so there's nothing left to capture or apply here.</summary>
     public async Task<List<NotificationRequest>> AdvanceAfterApprovalAsync(
         RequisitionApproval completedApproval, Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
@@ -88,19 +89,6 @@ public class ApprovalWorkflowEngine
         var requisition = process.Requisition
             ?? await _requisitionRepository.GetByIdAsync(process.RequisitionId, cancellationToken)
             ?? throw new NotFoundException(nameof(Requisition), process.RequisitionId);
-
-        if (completedApproval.ApprovalWorkflowStage?.CapturesEstimatedCost == true)
-        {
-            var capturedCost = completedApproval.Actions
-                .Where(a => a.ActionType == ApprovalActionType.Approve && a.CapturedEstimatedCost.HasValue)
-                .OrderByDescending(a => a.CreatedAtUtc)
-                .Select(a => a.CapturedEstimatedCost!.Value)
-                .FirstOrDefault();
-            if (capturedCost > 0)
-            {
-                requisition.EstimatedCost = capturedCost;
-            }
-        }
 
         var version = await _workflowRepository.GetVersionByIdAsync(process.ApprovalWorkflowVersionId, cancellationToken)
             ?? throw new NotFoundException(nameof(Domain.Entities.ApprovalWorkflowVersion), process.ApprovalWorkflowVersionId);
@@ -162,19 +150,9 @@ public class ApprovalWorkflowEngine
         RequisitionApprovalProcess process, Requisition requisition, List<ApprovalWorkflowStage> candidateStages,
         Guid actorUserId, string actorName, string? actorRole, CancellationToken cancellationToken)
     {
-        // A Cost condition may only exclude a stage once a real human has actually captured a cost
-        // (some earlier CapturesEstimatedCost stage reached Approved) - otherwise Requisition.EstimatedCost
-        // is still just the unset default, and treating that as "cost below every threshold" lets a
-        // self-approval auto-skip on the capturing stage cascade into skipping every cost-conditional
-        // stage after it too, reaching full approval with zero human review (e.g. a Line Manager
-        // submitting their own request, where they're also the sole configured approver for the
-        // capturing stage). Err toward keeping a human in the loop, not toward auto-approving.
-        var costReliablyKnown = process.StageInstances.Any(
-            s => s.ApprovalWorkflowStage?.CapturesEstimatedCost == true && s.Status == RequisitionApprovalStatus.Approved);
-
         foreach (var stage in candidateStages)
         {
-            var (started, notifications) = await StartStageAsync(process, requisition, stage, costReliablyKnown, cancellationToken);
+            var (started, notifications) = await StartStageAsync(process, requisition, stage, cancellationToken);
             if (started is null || started.Status == RequisitionApprovalStatus.Skipped)
             {
                 continue;
@@ -184,16 +162,32 @@ public class ApprovalWorkflowEngine
             return notifications;
         }
 
-        // No stage left applicable/actionable - the requisition is fully approved.
-        var approveEntry = requisition.Approve(actorUserId, actorName, actorRole, "All approval stages completed.");
-        _requisitionRepository.AddStatusHistory(approveEntry);
+        // No stage left applicable/actionable - the requisition is fully resolved. If a PartialApprove
+        // happened at ANY stage along the way, the outcome can never be a full Approve - some quantity
+        // was declined, even though every later stage has now signed off on the remaining split.
+        // process.StageInstances may not include every prior stage here (relationship fixup only wires
+        // up entities already tracked in the current DbContext, and an earlier stage's PartialApprove
+        // could have been recorded in a completely different request) - re-fetch the full process with
+        // every stage's action history purely for this check, without changing what was used above to
+        // decide routing.
+        var fullProcess = await _requisitionApprovalRepository.GetProcessByIdAsync(process.Id, cancellationToken) ?? process;
+        var hadPartialApproval = fullProcess.StageInstances
+            .SelectMany(s => s.Actions)
+            .Any(a => a.ActionType == ApprovalActionType.PartialApprove);
+
+        var finalEntry = hadPartialApproval
+            ? requisition.PartialApprove(actorUserId, actorName, actorRole, "All approval stages completed.")
+            : requisition.Approve(actorUserId, actorName, actorRole, "All approval stages completed.");
+        _requisitionRepository.AddStatusHistory(finalEntry);
         process.CurrentStageOrder = null;
         process.CompletedAtUtc = DateTime.UtcNow;
 
         return
         [
             new NotificationRequest(
-                requisition.CompanyId, requisition.RequestedByUserId, NotificationEventType.RequisitionApproved, requisition.Id,
+                requisition.CompanyId, requisition.RequestedByUserId,
+                hadPartialApproval ? NotificationEventType.RequisitionPartiallyApproved : NotificationEventType.RequisitionApproved,
+                requisition.Id,
                 new Dictionary<string, string>
                 {
                     ["RequisitionNumber"] = requisition.RequisitionNumber ?? "N/A",
@@ -208,9 +202,9 @@ public class ApprovalWorkflowEngine
     /// whose resolved approvers are ALL the requestor is created but immediately marked Skipped with an
     /// AutoSkip action logged, per the plan's self-approval rule.</summary>
     private async Task<(RequisitionApproval? Approval, List<NotificationRequest> Notifications)> StartStageAsync(
-        RequisitionApprovalProcess process, Requisition requisition, ApprovalWorkflowStage stage, bool costReliablyKnown, CancellationToken cancellationToken)
+        RequisitionApprovalProcess process, Requisition requisition, ApprovalWorkflowStage stage, CancellationToken cancellationToken)
     {
-        if (!IsStageApplicable(stage, requisition, costReliablyKnown))
+        if (!IsStageApplicable(stage, requisition))
         {
             return (null, []);
         }
@@ -311,20 +305,16 @@ public class ApprovalWorkflowEngine
 
     /// <summary>Cost + Category only. No condition rows = always included. Multiple condition rows on
     /// one stage are AND'd - the conservative reading absent an explicit spec for combining them, so a
-    /// stage never fires on a partial match the admin didn't configure.</summary>
-    private static bool IsStageApplicable(ApprovalWorkflowStage stage, Requisition requisition, bool costReliablyKnown)
+    /// stage never fires on a partial match the admin didn't configure. Requisition.EstimatedCost is
+    /// always a real, deterministic value by the time any stage is evaluated - computed once from the
+    /// Admin's catalog prices at Create/Update time (RequisitionFieldValidation.ComputeEstimatedCost) -
+    /// so Cost conditions are evaluated directly, with no "was cost captured yet" gate needed.</summary>
+    private static bool IsStageApplicable(ApprovalWorkflowStage stage, Requisition requisition)
     {
         foreach (var condition in stage.Conditions)
         {
             if (condition.ConditionType == ApprovalConditionType.Cost)
             {
-                if (!costReliablyKnown)
-                {
-                    // Cost was never actually captured (the capturing stage was skipped or excluded) -
-                    // don't let an unset/stale EstimatedCost silently exclude this stage.
-                    continue;
-                }
-
                 if (condition.MinCost.HasValue && requisition.EstimatedCost < condition.MinCost.Value)
                 {
                     return false;

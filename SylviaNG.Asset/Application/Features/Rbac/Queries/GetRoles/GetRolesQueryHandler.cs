@@ -34,7 +34,7 @@ public class GetRolesQueryHandler : IRequestHandler<GetRolesQuery, List<RoleSumm
     private static string RoleLabel(UserRole role) => role switch
     {
         UserRole.Employee => "Employee",
-        UserRole.LineManager => "Line Manager",
+        UserRole.Manager => "Manager",
         UserRole.DepartmentHead => "Department Head",
         UserRole.ProcurementOfficer => "Procurement Officer",
         UserRole.HrManager => "HR Manager",

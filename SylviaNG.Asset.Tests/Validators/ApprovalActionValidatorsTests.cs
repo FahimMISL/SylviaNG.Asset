@@ -6,11 +6,12 @@ using RMS.Application.Features.Approvals.DTOs;
 
 namespace SylviaNG.Assets.Tests.Validators;
 
-/// <summary>Comment is intentionally optional on Approve only - forcing a justification to approve
-/// something was premature (see ApproveApprovalCommandValidator's remarks). Every other approval
-/// action (Reject, SendBack, PartialApprove, RequestClarification, RespondToClarification,
+/// <summary>Comment is intentionally optional on Approve and PartialApprove - a partial approval
+/// already records its outcome in the per-item decisions, so a separate justification comment adds
+/// friction without adding information (see PartialApproveApprovalCommandValidator's remarks). Every
+/// other approval action (Reject, SendBack, RequestClarification, RespondToClarification,
 /// DelegateApprovalAction, Escalate) requires a real explanation, same as CreateDelegation's Reason -
-/// this was previously unenforced (empty/1-character comments were accepted) until this fix.
+/// this was previously unenforced (empty/1-character comments were accepted) until that fix.
 /// Decline-reason on a PartialApprove item stays optional regardless.</summary>
 public class ApprovalActionValidatorsTests
 {
@@ -86,5 +87,22 @@ public class ApprovalActionValidatorsTests
         var result = validator.Validate(command);
 
         result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("OK")]
+    [InlineData("Approved")]
+    public void PartialApproveValidator_WithAnyLengthComment_HasNoCommentError(string? comment)
+    {
+        var validator = new PartialApproveApprovalCommandValidator();
+        var command = new PartialApproveApprovalCommand(
+            Guid.NewGuid(), comment!,
+            [new PartialApprovalDecisionInput(Guid.NewGuid(), 6, 4, null)]);
+
+        var result = validator.Validate(command);
+
+        result.Errors.Should().NotContain(e => e.PropertyName == "Comment");
     }
 }

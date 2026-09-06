@@ -27,7 +27,8 @@ public class ApprovalsControllerTests
     {
         var expected = new List<PendingApprovalDto>
         {
-            new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "REQ-2026-00001", "IT Equipment", "High",
+            new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "REQ-2026-00001", "IT Equipment",
+                new List<PendingApprovalItemDto> { new("Laptop", 1, 1500m) }, "High",
                 1500m, DateTime.UtcNow.AddDays(3), DateTime.UtcNow, 1, "Line Manager Review", false, true, null, "Green", false),
         };
         _senderMock.Setup(s => s.Send(It.IsAny<GetPendingApprovalsQuery>(), default)).ReturnsAsync(expected);
@@ -42,7 +43,7 @@ public class ApprovalsControllerTests
     public async Task Approve_ShouldSendCommand_AndReturnNoContent()
     {
         var approvalId = Guid.NewGuid();
-        var body = new ApproveApprovalRequestBody("Looks good, approving this request.", null);
+        var body = new ApproveApprovalRequestBody("Looks good, approving this request.");
 
         var result = await _controller.Approve(approvalId, body, CancellationToken.None);
 
