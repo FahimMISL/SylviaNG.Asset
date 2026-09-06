@@ -25,12 +25,27 @@ public record RequisitionStatusHistoryDto(
         h.FromStatus?.ToString(), h.ToStatus.ToString(), h.ActorUserId, h.ActorName, h.ActorRole, h.Comment, h.CreatedAtUtc);
 }
 
-/// <summary>US-007: attachment metadata - no blob/content here, just what the requisition detail list needs.</summary>
+/// <summary>US-007 / Feature 13: document metadata - no blob/content here, just what the requisition
+/// detail list needs. StoragePath is deliberately never exposed - the frontend only ever addresses an
+/// attachment by Id through the download endpoint. IsLatestVersion is computed here (not stored) by
+/// comparing against the highest Version among non-deleted siblings sharing this row's DocumentType -
+/// it can never drift out of sync the way a stored flag could.</summary>
 public record RequisitionAttachmentDto(
-    Guid Id, string FileName, string ContentType, long SizeBytes, string UploadedByName, DateTime UploadedAtUtc)
+    Guid Id, string FileName, string ContentType, long SizeBytes, string UploadedByName, DateTime UploadedAtUtc,
+    string DocumentType, int Version, bool IsLatestVersion)
 {
-    public static RequisitionAttachmentDto FromEntity(RequisitionAttachment a) => new(
-        a.Id, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByName, a.CreatedAtUtc);
+    public static RequisitionAttachmentDto FromEntity(RequisitionAttachment a, IEnumerable<RequisitionAttachment> siblings)
+    {
+        var latestVersionInLineage = siblings
+            .Where(s => !s.IsDeleted && s.DocumentType == a.DocumentType)
+            .Select(s => s.Version)
+            .DefaultIfEmpty(a.Version)
+            .Max();
+
+        return new(
+            a.Id, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByName, a.CreatedAtUtc,
+            a.DocumentType.ToString(), a.Version, !a.IsDeleted && a.Version == latestVersionInLineage);
+    }
 }
 
 public record RequisitionDto(
@@ -102,7 +117,9 @@ public record RequisitionDto(
         r.Items.Select(RequisitionItemDto.FromEntity).ToList(),
         r.FieldValues.Select(RequisitionFieldValueDto.FromEntity).ToList(),
         r.StatusHistory.Select(RequisitionStatusHistoryDto.FromEntity).ToList(),
-        r.Attachments.Select(RequisitionAttachmentDto.FromEntity).ToList(),
+        // Feature 13: soft-deleted rows never appear in this list; r.Attachments (the full, unfiltered
+        // set) is still passed as sibling context so IsLatestVersion is computed correctly.
+        r.Attachments.Where(a => !a.IsDeleted).Select(a => RequisitionAttachmentDto.FromEntity(a, r.Attachments)).ToList(),
         r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct),
         ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null);
 }

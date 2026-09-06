@@ -9,17 +9,15 @@ namespace RMS.Application.Features.Requisitions.Commands.DeleteRequisitionAttach
 public class DeleteRequisitionAttachmentCommandHandler : IRequestHandler<DeleteRequisitionAttachmentCommand>
 {
     private readonly IRequisitionRepository _requisitionRepository;
-    private readonly IFileStorageService _fileStorage;
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditLogger _auditLogger;
     private readonly IUnitOfWork _unitOfWork;
 
     public DeleteRequisitionAttachmentCommandHandler(
-        IRequisitionRepository requisitionRepository, IFileStorageService fileStorage,
+        IRequisitionRepository requisitionRepository,
         ICurrentUserService currentUser, IAuditLogger auditLogger, IUnitOfWork unitOfWork)
     {
         _requisitionRepository = requisitionRepository;
-        _fileStorage = fileStorage;
         _currentUser = currentUser;
         _auditLogger = auditLogger;
         _unitOfWork = unitOfWork;
@@ -51,8 +49,12 @@ public class DeleteRequisitionAttachmentCommandHandler : IRequestHandler<DeleteR
             throw new ForbiddenException();
         }
 
-        _requisitionRepository.RemoveAttachment(requisition, attachment);
-        _fileStorage.Delete(attachment.StoragePath);
+        // Feature 13: soft-delete - the row and physical file are both preserved (never destroyed),
+        // so this document's audit history stays traceable. It's excluded from GetRequisitionByIdQuery's
+        // attachment list and from the active storage-size cap, but nothing is physically removed.
+        attachment.IsDeleted = true;
+        attachment.DeletedAtUtc = DateTime.UtcNow;
+        attachment.DeletedByUserId = userId;
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _auditLogger.LogAsync("RequisitionAttachmentRemoved", nameof(Requisition), requisition.Id, $"File={attachment.FileName}", cancellationToken);
