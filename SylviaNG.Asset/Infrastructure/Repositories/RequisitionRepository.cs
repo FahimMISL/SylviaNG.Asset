@@ -44,6 +44,10 @@ public class RequisitionRepository : IRequisitionRepository
         _context.Requisitions
             .Include(r => r.Items)
             .Include(r => r.Category)
+            // Needed for Requisition.CanCancel (RequisitionSummaryDto.CanCancel) - without this,
+            // ApprovalProcess reads as null for an UnderReview requisition even when a real process
+            // row exists, which would make CanCancel wrongly report true.
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions)
             .Where(r => r.CompanyId == companyId && r.RequestedByUserId == userId)
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);

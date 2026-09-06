@@ -6,10 +6,12 @@ using RMS.Application.Features.Approvals.DTOs;
 
 namespace SylviaNG.Assets.Tests.Validators;
 
-/// <summary>Comment and decline-reason are both optional on every approval action - there's no
-/// Procurement Officer feature yet to be a real cost source, and requiring a comment/reason on
-/// every action was premature ahead of that being built out. See ApproveApprovalCommandValidator's
-/// remarks.</summary>
+/// <summary>Comment is intentionally optional on Approve only - forcing a justification to approve
+/// something was premature (see ApproveApprovalCommandValidator's remarks). Every other approval
+/// action (Reject, SendBack, PartialApprove, RequestClarification, RespondToClarification,
+/// DelegateApprovalAction, Escalate) requires a real explanation, same as CreateDelegation's Reason -
+/// this was previously unenforced (empty/1-character comments were accepted) until this fix.
+/// Decline-reason on a PartialApprove item stays optional regardless.</summary>
 public class ApprovalActionValidatorsTests
 {
     [Theory]
@@ -19,7 +21,7 @@ public class ApprovalActionValidatorsTests
     public void ApproveValidator_WithAnyLengthComment_HasNoCommentError(string? comment)
     {
         var validator = new ApproveApprovalCommandValidator();
-        var command = new ApproveApprovalCommand(Guid.NewGuid(), comment!, null);
+        var command = new ApproveApprovalCommand(Guid.NewGuid(), comment!);
 
         var result = validator.Validate(command);
 
@@ -27,21 +29,22 @@ public class ApprovalActionValidatorsTests
     }
 
     [Fact]
-    public void ApproveValidator_WithEstimatedCostZeroOrNegative_HasError()
+    public void RejectValidator_WithShortComment_HasError()
     {
-        var validator = new ApproveApprovalCommandValidator();
-        var command = new ApproveApprovalCommand(Guid.NewGuid(), "", 0m);
+        var validator = new RejectApprovalCommandValidator();
+        var command = new RejectApprovalCommand(Guid.NewGuid(), "short");
 
         var result = validator.Validate(command);
 
         result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "Comment");
     }
 
     [Fact]
-    public void RejectValidator_WithShortComment_HasNoError()
+    public void RejectValidator_WithValidComment_HasNoError()
     {
         var validator = new RejectApprovalCommandValidator();
-        var command = new RejectApprovalCommand(Guid.NewGuid(), "short");
+        var command = new RejectApprovalCommand(Guid.NewGuid(), "Budget for this item was already exhausted this quarter.");
 
         var result = validator.Validate(command);
 

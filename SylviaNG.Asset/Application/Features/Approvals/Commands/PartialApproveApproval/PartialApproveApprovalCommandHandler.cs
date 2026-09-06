@@ -34,6 +34,8 @@ public class PartialApproveApprovalCommandHandler : IRequestHandler<PartialAppro
 
     public async Task Handle(PartialApproveApprovalCommand request, CancellationToken cancellationToken)
     {
+        CommentValidation.EnsureValid(request.Comment);
+
         var userId = _currentUser.UserId ?? throw new ForbiddenException();
         var actorName = _currentUser.FullName ?? "Unknown";
         var actorRole = _currentUser.Role?.ToString();
