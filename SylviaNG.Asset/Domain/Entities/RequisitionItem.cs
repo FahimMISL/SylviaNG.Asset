@@ -15,4 +15,9 @@ public class RequisitionItem : AuditableEntity
     /// deleting an Item/Type later doesn't break historical requisitions - ItemName stays intact.</summary>
     public Guid? CategoryItemId { get; set; }
     public CategoryItem? CategoryItem { get; set; }
+
+    /// <summary>Feature 5: cumulative quantity fulfilled so far across every RecordFulfillment action -
+    /// the running total; a single fulfillment action's own delta lives on
+    /// RequisitionProcurementLineItem.QuantityFulfilledThisAction instead.</summary>
+    public int FulfilledQuantity { get; set; }
 }

@@ -1,0 +1,167 @@
+using RMS.Application.Features.Approvals.DTOs;
+using RMS.Application.Features.Procurement.DTOs;
+using RMS.Application.Features.Reporting.Services;
+using RMS.Domain.Entities;
+using RMS.Domain.Enums;
+
+namespace RMS.Application.Features.Requisitions.DTOs;
+
+public record RequisitionItemDto(Guid Id, string ItemName, int Quantity, Guid? CategoryItemId)
+{
+    public static RequisitionItemDto FromEntity(RequisitionItem i) => new(i.Id, i.ItemName, i.Quantity, i.CategoryItemId);
+}
+
+public record RequisitionFieldValueDto(Guid FieldDefinitionId, string Label, string? Value)
+{
+    public static RequisitionFieldValueDto FromEntity(RequisitionFieldValue v) => new(
+        v.FieldDefinitionId, v.FieldDefinition?.Label ?? string.Empty, v.Value);
+}
+
+/// <summary>FR-RR-009: one timeline entry.</summary>
+public record RequisitionStatusHistoryDto(
+    string? FromStatus, string ToStatus, Guid ActorUserId, string ActorName, string? ActorRole, string? Comment, DateTime TimestampUtc)
+{
+    public static RequisitionStatusHistoryDto FromEntity(RequisitionStatusHistory h) => new(
+        h.FromStatus?.ToString(), h.ToStatus.ToString(), h.ActorUserId, h.ActorName, h.ActorRole, h.Comment, h.CreatedAtUtc);
+}
+
+/// <summary>US-007 / Feature 13: document metadata - no blob/content here, just what the requisition
+/// detail list needs. StoragePath is deliberately never exposed - the frontend only ever addresses an
+/// attachment by Id through the download endpoint. IsLatestVersion is computed here (not stored) by
+/// comparing against the highest Version among non-deleted siblings sharing this row's DocumentType -
+/// it can never drift out of sync the way a stored flag could.</summary>
+public record RequisitionAttachmentDto(
+    Guid Id, string FileName, string ContentType, long SizeBytes, string UploadedByName, DateTime UploadedAtUtc,
+    string DocumentType, int Version, bool IsLatestVersion)
+{
+    public static RequisitionAttachmentDto FromEntity(RequisitionAttachment a, IEnumerable<RequisitionAttachment> siblings)
+    {
+        var latestVersionInLineage = siblings
+            .Where(s => !s.IsDeleted && s.DocumentType == a.DocumentType)
+            .Select(s => s.Version)
+            .DefaultIfEmpty(a.Version)
+            .Max();
+
+        return new(
+            a.Id, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByName, a.CreatedAtUtc,
+            a.DocumentType.ToString(), a.Version, !a.IsDeleted && a.Version == latestVersionInLineage);
+    }
+}
+
+public record RequisitionDto(
+    Guid Id,
+    string? RequisitionNumber,
+    /// <summary>Lets the frontend determine whether the current viewer IS the requestor, without
+    /// inferring it - needed to gate requestor-only actions like Respond to Clarification.</summary>
+    Guid RequestedByUserId,
+    Guid CategoryId,
+    string CategoryName,
+    int CategoryVersionNumber,
+    string Priority,
+    DateTime? NeedByDate,
+    decimal EstimatedCost,
+    string? Justification,
+    string? UrgencyJustification,
+    Guid? CostCenterId,
+    string? CostCenterName,
+    string? ProjectCode,
+    string Status,
+    DateTime? SubmittedAtUtc,
+    DateTime? CancelledAtUtc,
+    DateTime CreatedAtUtc,
+    List<RequisitionItemDto> Items,
+    List<RequisitionFieldValueDto> FieldValues,
+    List<RequisitionStatusHistoryDto> Timeline,
+    List<RequisitionAttachmentDto> Attachments,
+    /// <summary>Feature 3: resolved workflow version, stages with status/approvers/SLA state, and the
+    /// action history - null while the requisition hasn't been submitted into a workflow yet. Read-only:
+    /// approvers still cannot edit requisition fields through this DTO. Its CurrentUserCanAct flag is
+    /// the one authoritative, delegation-aware "should I show approve/reject/etc. buttons" signal -
+    /// see ApprovalProcessDto's remarks.</summary>
+    ApprovalProcessDto? ApprovalProcess,
+    /// <summary>Feature 5: null until Status reaches Approved or later. Read-only for the requestor
+    /// (satisfies rule 10's "requester visibility of procurement/fulfillment progress" for free, since
+    /// the requestor already passes GetRequisitionByIdQueryHandler's owner check) - its
+    /// CurrentUserCanProcess flag is the one authoritative "show Start Processing/Record
+    /// Fulfillment/Close buttons" signal, same role as ApprovalProcessDto.CurrentUserCanAct.</summary>
+    ProcurementDto? Procurement)
+{
+    private static readonly HashSet<RequisitionStatus> ProcurementPipelineStatuses =
+    [
+        RequisitionStatus.Approved, RequisitionStatus.PartiallyApproved, RequisitionStatus.InProcurement,
+        RequisitionStatus.PartiallyFulfilled, RequisitionStatus.Fulfilled, RequisitionStatus.Closed,
+    ];
+
+    /// <summary>currentUserCanAct/currentUserCanProcess default false for call sites that don't need
+    /// them (e.g. the requestor's own view of a requisition they just created/listed) -
+    /// GetRequisitionByIdQueryHandler is the one place that computes them properly.</summary>
+    public static RequisitionDto FromEntity(Requisition r, bool currentUserCanAct = false, bool currentUserCanProcess = false) => new(
+        r.Id,
+        r.RequisitionNumber,
+        r.RequestedByUserId,
+        r.CategoryId,
+        r.Category?.Name ?? string.Empty,
+        r.CategoryVersionNumber,
+        r.Priority.ToString(),
+        r.NeedByDate,
+        r.EstimatedCost,
+        r.Justification,
+        r.UrgencyJustification,
+        r.CostCenterId,
+        r.CostCenter?.Name,
+        r.ProjectCode,
+        r.Status.ToString(),
+        r.SubmittedAtUtc,
+        r.CancelledAtUtc,
+        r.CreatedAtUtc,
+        r.Items.Select(RequisitionItemDto.FromEntity).ToList(),
+        r.FieldValues.Select(RequisitionFieldValueDto.FromEntity).ToList(),
+        r.StatusHistory.Select(RequisitionStatusHistoryDto.FromEntity).ToList(),
+        // Feature 13: soft-deleted rows never appear in this list; r.Attachments (the full, unfiltered
+        // set) is still passed as sibling context so IsLatestVersion is computed correctly.
+        r.Attachments.Where(a => !a.IsDeleted).Select(a => RequisitionAttachmentDto.FromEntity(a, r.Attachments)).ToList(),
+        r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct),
+        ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null);
+}
+
+public record RequisitionSummaryDto(
+    Guid Id,
+    string? RequisitionNumber,
+    string CategoryName,
+    string Status,
+    string Priority,
+    DateTime? NeedByDate,
+    decimal EstimatedCost,
+    DateTime CreatedAtUtc,
+    int ItemCount,
+    string? RequesterName)
+{
+    public static RequisitionSummaryDto FromEntity(Requisition r) => new(
+        r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(), r.Priority.ToString(),
+        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count, r.RequestedByUser?.FullName);
+}
+
+/// <summary>Feature 11: one search result row. ApprovalStatus/ProcurementStatus reuse
+/// ReportingCalculations' own display logic (Feature 7) rather than duplicating it - they're computed
+/// from Status, not separate stored columns, so there's nothing new to keep in sync.</summary>
+public record RequisitionSearchResultDto(
+    Guid Id,
+    string? RequisitionNumber,
+    string CategoryName,
+    string Status,
+    string ApprovalStatus,
+    string? ProcurementStatus,
+    string Priority,
+    DateTime? NeedByDate,
+    decimal EstimatedCost,
+    DateTime CreatedAtUtc,
+    int ItemCount,
+    string? RequesterName,
+    string? Department)
+{
+    public static RequisitionSearchResultDto FromEntity(Requisition r) => new(
+        r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(),
+        ReportingCalculations.DescribeApprovalStatus(r), ReportingCalculations.DescribeProcurementStatus(r),
+        r.Priority.ToString(), r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count,
+        r.RequestedByUser?.FullName, r.RequestedByUser?.Department);
+}

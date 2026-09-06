@@ -1,4 +1,6 @@
+using RMS.Application.Common;
 using RMS.Domain.Entities;
+using RMS.Domain.Enums;
 
 namespace RMS.Application.Interfaces;
 
@@ -6,9 +8,49 @@ public interface IRequisitionRepository
 {
     Task<Requisition?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Feature 10 (US-032): DepartmentHead's own data-scoping list - every requisition raised
+    /// by someone in the given department, mirroring GetAllForUserAsync's shape exactly.</summary>
+    Task<List<Requisition>> GetForDepartmentAsync(Guid companyId, string department, CancellationToken cancellationToken = default);
+
+    /// <summary>Feature 12: HR Manager's own company-wide data-scoping read - every Manpower-category
+    /// requisition regardless of requester/department. Callers must restrict who's allowed to invoke
+    /// this (see GetManpowerSummaryQueryHandler).</summary>
+    Task<List<Requisition>> GetManpowerForCompanyAsync(Guid companyId, CancellationToken cancellationToken = default);
+
+    /// <summary>Feature 5: every requisition in the procurement pipeline for this company - no
+    /// per-user filter, since every Procurement Officer must see every match (no assignment).</summary>
+    Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default);
     Task<bool> HasRequisitionsForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
     Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
+
+    /// <summary>FR-RR-004: the highest sequence number already assigned this year, to derive the next
+    /// one (highest + 1) - not a count of currently-existing rows, since a deleted requisition (see
+    /// DeleteRequisitionCommand's UnderReview case) would otherwise leave a gap that a count-based
+    /// "next sequence" collides into.</summary>
+    Task<int> GetHighestSequenceInYearAsync(int year, CancellationToken cancellationToken = default);
+
+    /// <summary>FR-RR-011: the most recent match, if any, for the soft duplicate-submission warning.</summary>
+    Task<Requisition?> FindPotentialDuplicateAsync(
+        Guid userId, Guid categoryId, DateTime needByDate, int totalQuantity, DateTime sinceUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>Feature 4 replacement-rule check: the most recent Approved/PartiallyApproved
+    /// transition timestamp (RequisitionStatusHistory.CreatedAtUtc where ToStatus is one of those two)
+    /// among this user's requisitions for (CategoryId, CategoryItemId) whose CURRENT status is one of
+    /// qualifyingStatuses - i.e. it was actually approved at some point and hasn't since moved to a
+    /// status outside that set (Rejected/Cancelled/Draft/SentBack/Submitted/UnderReview requisitions
+    /// never count, not even as a "no prior request" fallback). Null if no such requisition exists -
+    /// PolicyEvaluationService treats that as "first-time request, allowed".</summary>
+    Task<DateTime?> GetMostRecentApprovedTransitionUtcAsync(
+        Guid userId, Guid categoryId, Guid? categoryItemId, List<RequisitionStatus> qualifyingStatuses,
+        CancellationToken cancellationToken = default);
+
     void Add(Requisition requisition);
+
+    /// <summary>Permanently removes a Requisition and its owned children (Items, FieldValues,
+    /// StatusHistory, Attachments) via the configured cascade-delete relationships. Only ever called on
+    /// a Draft - see DeleteRequisitionCommandHandler.</summary>
+    void Remove(Requisition requisition);
 
     /// <summary>
     /// Replaces a requisition's items by adding new ones directly against the
@@ -18,4 +60,45 @@ public interface IRequisitionRepository
     /// </summary>
     void ReplaceItems(Requisition requisition, List<RequisitionItem> newItems);
     void ReplaceFieldValues(Requisition requisition, List<RequisitionFieldValue> newValues);
+    void AddAttachment(Requisition requisition, RequisitionAttachment attachment);
+    void RemoveAttachment(Requisition requisition, RequisitionAttachment attachment);
+
+    /// <summary>Registers a new status-transition entry directly against the DbSet. Required for any
+    /// Requisition loaded via GetByIdAsync (already tracked) - see Requisition.Submit's remarks for why
+    /// StatusHistory.Add(...) alone isn't reliable in that case. Not needed for a brand-new Requisition
+    /// that hasn't been Add()-ed yet, since EF correctly discovers its whole graph as inserts.</summary>
+    void AddStatusHistory(RequisitionStatusHistory entry);
+
+    /// <summary>Feature 5: registers a new procurement/fulfillment ledger entry directly against the
+    /// DbSet - see AddStatusHistory's remarks for why this bypasses the tracked parent's navigation
+    /// collection.</summary>
+    void AddProcurementRecord(RequisitionProcurementRecord record);
+
+    /// <summary>Feature 7: every requisition matching the given (all-optional) filters, for the
+    /// Operational Report and the Executive Summary (called with every filter null - a full,
+    /// unfiltered snapshot). Loads Items+CategoryItem, Category, RequestedByUser, StatusHistory, and
+    /// ApprovalProcess+StageInstances+ApprovalWorkflowStage - everything ReportingCalculations needs,
+    /// nothing procurement-specific since procurement/approval status here is derived purely from
+    /// Requisition.Status, not from RequisitionProcurementRecords.</summary>
+    Task<List<Requisition>> GetForReportingAsync(
+        Guid companyId, DateTime? dateFrom, DateTime? dateTo, string? department, Guid? categoryId, Guid? categoryItemId,
+        List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? requesterSearch,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Feature 11: server-side, multi-criteria, paginated search. The three scope parameters are
+    /// mutually exclusive and mirror the exact data boundary each of GetAllForUserAsync (ownerUserId),
+    /// GetForDepartmentAsync (scopeDepartment), and GetForProcurementAsync (scopeToPipeline) already
+    /// enforce - not a new access rule, the same one generalized into a single searchable query. All
+    /// null/false means unrestricted (SystemAdmin only - the handler is responsible for never passing
+    /// that combination for anyone else). freeText matches (case-insensitively) RequisitionNumber,
+    /// RequestedByUser.FullName, Category.Name, or any Items[].ItemName - the last of these is what
+    /// makes searching a manpower Position (e.g. "Software Engineer") find the requisition that has it
+    /// as a line, without a separate manpower search path.
+    /// </summary>
+    Task<PagedResult<Requisition>> SearchAsync(
+        Guid companyId, Guid? ownerUserId, string? scopeDepartment, bool scopeToPipeline,
+        string? freeText, string? requesterSearch, List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? department,
+        Guid? categoryId, Guid? categoryItemId, DateTime? dateFrom, DateTime? dateTo, DateTime? needByFrom, DateTime? needByTo,
+        string sortBy, bool sortDescending, int page, int pageSize, CancellationToken cancellationToken = default);
 }

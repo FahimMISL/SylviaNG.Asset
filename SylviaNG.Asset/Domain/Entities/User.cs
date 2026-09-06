@@ -19,4 +19,15 @@ public class User : AuditableEntity
     public string PasswordHash { get; set; } = string.Empty;
     public UserRole Role { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Feature 4 (Eligibility & Policy Management): flat eligibility attributes, mirroring
+    /// how Company is already just a flat Name rather than a master-data hierarchy. All nullable -
+    /// existing seeded/imported users won't have these set until HR/Admin populates them, and a user
+    /// with a null attribute simply never matches a policy criterion of that type (see
+    /// PolicyEvaluationService).</summary>
+    public string? Grade { get; set; }
+    public string? Designation { get; set; }
+    public EmploymentType? EmploymentType { get; set; }
+    public string? Department { get; set; }
+    public string? Location { get; set; }
 }

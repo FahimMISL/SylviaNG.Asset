@@ -102,6 +102,32 @@ namespace SylviaNG.Assets.Infrastructure.Extensions
             services.AddScoped<ICategoryRepository, CategoryRepository>();
             services.AddScoped<ICostCenterRepository, CostCenterRepository>();
             services.AddScoped<IRequisitionExistenceChecker, RequisitionExistenceChecker>();
+            services.AddScoped<ICurrentUserService, CurrentUserService>();
+            services.AddScoped<IAuditLogger, AuditLogger>();
+            services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
+            // Feature 3 - Approval Workflow Management
+            services.AddScoped<IApprovalWorkflowRepository, ApprovalWorkflowRepository>();
+            services.AddScoped<IRequisitionApprovalRepository, RequisitionApprovalRepository>();
+            services.AddScoped<IApprovalDelegationRepository, ApprovalDelegationRepository>();
+            services.AddScoped<IUserRepository, UserRepository>();
+            services.AddHostedService<SlaBreachEscalationService>();
+
+            // Feature 4 - Eligibility & Policy Management
+            services.AddScoped<IEligibilityPolicyRepository, EligibilityPolicyRepository>();
+
+            // Feature 8 - Audit & Compliance
+            services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+
+            // Feature 9 - Notification Center (replaces the Feature 3 NoOpNotificationService stub)
+            services.AddScoped<INotificationService, NotificationService>();
+            services.AddScoped<INotificationRepository, NotificationRepository>();
+            services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
+            services.AddScoped<INotificationTemplateRepository, NotificationTemplateRepository>();
+
+            // Feature 10 - Role-Based Access Control
+            services.AddScoped<IPermissionService, PermissionService>();
+            services.AddScoped<IRolePermissionRepository, RolePermissionRepository>();
 
             // Register Unit of Work
             services.AddScoped<SylviaNG.Assets.SharedKernel.Generic.IUnitOfWork, UnitOfWork>();

@@ -1,6 +1,9 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using MediatR;
+using RMS.Application.Features.ApprovalWorkflows.Services;
+using RMS.Application.Features.EligibilityPolicies.Services;
+using RMS.Application.Features.Procurement.Services;
 using SylviaNG.Assets.Application.Interfaces.Services;
 using SylviaNG.Assets.Application.Services;
 using System.Reflection;
@@ -21,6 +24,8 @@ namespace SylviaNG.Assets.Application.Extensions
                .AddValidatorsFromAssembly(typeof(Program).Assembly);
 
             services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+            // Feature 10 - additive permission-matrix enforcement, see PermissionAuthorizationBehavior's remarks.
+            services.AddTransient(typeof(IPipelineBehavior<,>), typeof(PermissionAuthorizationBehavior<,>));
 
             // Register your services here
             // Adding DI of services
@@ -29,6 +34,15 @@ namespace SylviaNG.Assets.Application.Extensions
             // Add asset-specific services here
 
             services.AddScoped<IAssetService, AssetService>();
+
+            // Feature 3 - Approval Workflow Management
+            services.AddScoped<ApprovalWorkflowEngine>();
+
+            // Feature 4 - Eligibility & Policy Management
+            services.AddScoped<PolicyEvaluationService>();
+
+            // Feature 5 - Procurement & Fulfillment
+            services.AddScoped<ProcurementService>();
 
             // Provide access to HttpContext for request metadata enrichment
             services.AddHttpContextAccessor();

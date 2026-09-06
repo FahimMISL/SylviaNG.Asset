@@ -9,6 +9,16 @@ namespace RMS.Domain.Entities;
 public class AuditLog
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Feature 8: captured directly at write time (not resolved later via EntityId/EntityName joins)
+    /// so the audit trail for an entity survives that entity's own deletion - e.g. a "RequisitionDeleted"
+    /// row, or any prior history for that requisition, must still be visible after the requisition
+    /// itself is gone. Nullable only for the (currently theoretical, single-company-in-practice) case
+    /// where no company can be resolved at all.
+    /// </summary>
+    public Guid? CompanyId { get; set; }
+
     public Guid? ActorUserId { get; set; }
     public string ActorName { get; set; } = "System";
     public string? ActorRole { get; set; }

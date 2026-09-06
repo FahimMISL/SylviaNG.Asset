@@ -11,6 +11,22 @@ public class RequisitionConfiguration : IEntityTypeConfiguration<Requisition>
         builder.ToTable("Requisitions");
         builder.HasKey(r => r.Id);
         builder.Property(r => r.Justification).HasMaxLength(2000);
+        builder.Property(r => r.UrgencyJustification).HasMaxLength(2000);
+        builder.Property(r => r.EstimatedCost).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.RequisitionNumber).HasMaxLength(20);
+        // Filtered so multiple Drafts (RequisitionNumber still null) don't collide under providers
+        // that treat NULL as a value in unique indexes.
+        builder.HasIndex(r => r.RequisitionNumber).IsUnique().HasFilter("\"RequisitionNumber\" IS NOT NULL");
+
+        builder.HasMany(r => r.StatusHistory)
+            .WithOne(h => h.Requisition!)
+            .HasForeignKey(h => h.RequisitionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(r => r.Attachments)
+            .WithOne(a => a.Requisition!)
+            .HasForeignKey(a => a.RequisitionId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(r => r.Company)
             .WithMany()
@@ -43,5 +59,13 @@ public class RequisitionConfiguration : IEntityTypeConfiguration<Requisition>
             .WithOne(v => v.Requisition!)
             .HasForeignKey(v => v.RequisitionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Feature 5: Npgsql system column, zero migration overhead - the concurrency mechanism for
+        // double-action protection now that Procurement is the first place multiple different users
+        // (any number of Procurement Officers) can legitimately race to act on the same Requisition
+        // row. A violation surfaces as DbUpdateConcurrencyException. UseXminAsConcurrencyToken()
+        // shorthand isn't available in this Npgsql provider version; this shadow-property form is the
+        // documented equivalent (same pattern already used on RequisitionApproval).
+        builder.Property<uint>("xmin").IsRowVersion();
     }
 }

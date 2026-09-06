@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using RMS.Application.Common;
+using RMS.Application.Features.Requisitions.Services;
 using RMS.Application.Interfaces;
 using RMS.Domain.Entities;
+using RMS.Domain.Enums;
 using RMS.Infrastructure.Data;
 
 namespace RMS.Infrastructure.Repositories;
@@ -16,10 +19,25 @@ public class RequisitionRepository : IRequisitionRepository
 
     public Task<Requisition?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         _context.Requisitions
-            .Include(r => r.Items)
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
             .Include(r => r.Category)
+            // Feature 10: needed for GetRequisitionByIdQueryHandler's DepartmentHead access branch
+            // (requisition.RequestedByUser?.Department).
+            .Include(r => r.RequestedByUser)
             .Include(r => r.CostCenter)
             .Include(r => r.FieldValues).ThenInclude(v => v.FieldDefinition)
+            .Include(r => r.StatusHistory.OrderBy(h => h.CreatedAtUtc))
+            .Include(r => r.Attachments.OrderByDescending(a => a.CreatedAtUtc))
+            // Feature 3: the resolved approval process, if any (created by ApprovalWorkflowEngine on
+            // submit) - needed both by CreateRequisitionCommandHandler's return value and by
+            // GetRequisitionByIdQueryHandler's approver-access extension / ApprovalProcessDto mapping.
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.ApprovalWorkflowVersion!).ThenInclude(v => v.ApprovalWorkflow)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.ApprovalWorkflowStage!).ThenInclude(s => s.Sla)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Assignments).ThenInclude(x => x.AssignedUser)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions).ThenInclude(act => act.PartialDecisions)
+            // Feature 5: procurement/fulfillment ledger, if any (created by ProcurementService) -
+            // needed by GetRequisitionByIdQueryHandler's ProcurementDto mapping.
+            .Include(r => r.ProcurementRecords.OrderBy(p => p.CreatedAtUtc)).ThenInclude(p => p.LineItems)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public Task<List<Requisition>> GetAllForUserAsync(Guid companyId, Guid userId, CancellationToken cancellationToken = default) =>
@@ -30,13 +48,107 @@ public class RequisitionRepository : IRequisitionRepository
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
+    public Task<List<Requisition>> GetForDepartmentAsync(Guid companyId, string department, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Where(r => r.CompanyId == companyId && r.RequestedByUser!.Department == department)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>Feature 12: HR Manager's own company-wide data-scoping read - every requisition in the
+    /// "Manpower" category regardless of requester/department, mirroring GetForDepartmentAsync's shape.
+    /// No prior art existed for HR Manager seeing anything beyond their own submissions before this;
+    /// callers must restrict who's allowed to invoke this (see GetManpowerSummaryQueryHandler).</summary>
+    public Task<List<Requisition>> GetManpowerForCompanyAsync(Guid companyId, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Where(r => r.CompanyId == companyId && r.Category != null && EF.Functions.ILike(r.Category.Name, "Manpower"))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>Feature 5: every requisition in the procurement pipeline for this company, regardless
+    /// of who requested it - no per-user filter, since rule 1 requires every Procurement Officer to
+    /// see every match with no assignment/round-robin.</summary>
+    public Task<List<Requisition>> GetForProcurementAsync(Guid companyId, List<RequisitionStatus> statuses, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ProcurementRecords)
+            // Needed so ProcurementService.GetApprovedCeilings sees any PartialApprovalDecision for a
+            // PartiallyApproved requisition's estimated total in the queue list, same as GetByIdAsync.
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.Actions).ThenInclude(act => act.PartialDecisions)
+            .Where(r => r.CompanyId == companyId && statuses.Contains(r.Status))
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
     public Task<bool> HasRequisitionsForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default) =>
         _context.Requisitions.AnyAsync(r => r.CategoryId == categoryId, cancellationToken);
 
     public Task<bool> AnyFieldValuesExistForCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default) =>
         _context.RequisitionFieldValues.AnyAsync(v => v.FieldDefinition!.CategoryId == categoryId, cancellationToken);
 
+    /// <summary>The highest sequence number ever assigned this year, not a count of currently-existing
+    /// rows - a requisition can be permanently deleted while UnderReview (see DeleteRequisitionCommand),
+    /// which would make a count-based "next sequence" collide with a still-existing higher number the
+    /// moment any requisition earlier in the sequence is removed. Fetches the matching numbers and
+    /// parses them in memory rather than trying to get EF to translate substring+parse to SQL - yearly
+    /// volume is small enough that this is simple and reliably correct.</summary>
+    public async Task<int> GetHighestSequenceInYearAsync(int year, CancellationToken cancellationToken = default)
+    {
+        var prefix = $"REQ-{year}-";
+        var numbers = await _context.Requisitions
+            .Where(r => r.RequisitionNumber != null && r.RequisitionNumber.StartsWith(prefix))
+            .Select(r => r.RequisitionNumber!)
+            .ToListAsync(cancellationToken);
+
+        var highest = 0;
+        foreach (var number in numbers)
+        {
+            if (int.TryParse(number.AsSpan(prefix.Length), out var sequence) && sequence > highest)
+            {
+                highest = sequence;
+            }
+        }
+        return highest;
+    }
+
+    public Task<Requisition?> FindPotentialDuplicateAsync(
+        Guid userId, Guid categoryId, DateTime needByDate, int totalQuantity, DateTime sinceUtc, CancellationToken cancellationToken = default) =>
+        _context.Requisitions
+            .Include(r => r.Items)
+            .Where(r => r.RequestedByUserId == userId
+                && r.CategoryId == categoryId
+                && r.NeedByDate.HasValue && r.NeedByDate.Value.Date == needByDate.Date
+                && r.CreatedAtUtc >= sinceUtc
+                // "You may have already SUBMITTED a similar request" only makes sense against
+                // something that was actually submitted - matching a Draft (which has no
+                // RequisitionNumber yet) showed "(null)" in the warning message.
+                && r.Status != Domain.Enums.RequisitionStatus.Draft
+                && r.Status != Domain.Enums.RequisitionStatus.Cancelled)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(r => r.Items.Sum(i => i.Quantity) == totalQuantity, cancellationToken);
+
+    public Task<DateTime?> GetMostRecentApprovedTransitionUtcAsync(
+        Guid userId, Guid categoryId, Guid? categoryItemId, List<RequisitionStatus> qualifyingStatuses,
+        CancellationToken cancellationToken = default) =>
+        _context.RequisitionStatusHistories
+            .Where(h => (h.ToStatus == RequisitionStatus.Approved || h.ToStatus == RequisitionStatus.PartiallyApproved)
+                && h.Requisition!.RequestedByUserId == userId
+                && h.Requisition.CategoryId == categoryId
+                && h.Requisition.Items.Any(i => i.CategoryItemId == categoryItemId)
+                && qualifyingStatuses.Contains(h.Requisition.Status))
+            .OrderByDescending(h => h.CreatedAtUtc)
+            .Select(h => (DateTime?)h.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public void Add(Requisition requisition) => _context.Requisitions.Add(requisition);
+
+    public void Remove(Requisition requisition) => _context.Requisitions.Remove(requisition);
 
     public void ReplaceItems(Requisition requisition, List<RequisitionItem> newItems)
     {
@@ -54,6 +166,181 @@ public class RequisitionRepository : IRequisitionRepository
         _context.RequisitionItems.AddRange(newItems);
     }
 
+    public void AddStatusHistory(RequisitionStatusHistory entry) => _context.RequisitionStatusHistories.Add(entry);
+
+    /// <summary>Feature 5: registers a new procurement/fulfillment ledger entry directly against the
+    /// DbSet - same tracking-bug workaround as AddStatusHistory, needed since the parent Requisition
+    /// is already tracked by the time a command handler calls this.</summary>
+    public void AddProcurementRecord(RequisitionProcurementRecord record) => _context.RequisitionProcurementRecords.Add(record);
+
+    public Task<List<Requisition>> GetForReportingAsync(
+        Guid companyId, DateTime? dateFrom, DateTime? dateTo, string? department, Guid? categoryId, Guid? categoryItemId,
+        List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? requesterSearch,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.StatusHistory)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(a => a.ApprovalWorkflowStage)
+            .Where(r => r.CompanyId == companyId && r.Status != RequisitionStatus.Draft);
+
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(r => r.SubmittedAtUtc != null && r.SubmittedAtUtc >= dateFrom.Value);
+        }
+        if (dateTo.HasValue)
+        {
+            query = query.Where(r => r.SubmittedAtUtc != null && r.SubmittedAtUtc <= dateTo.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(department))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == department);
+        }
+        if (categoryId.HasValue)
+        {
+            query = query.Where(r => r.CategoryId == categoryId.Value);
+        }
+        if (categoryItemId.HasValue)
+        {
+            query = query.Where(r => r.Items.Any(i => i.CategoryItemId == categoryItemId.Value));
+        }
+        if (statuses is { Count: > 0 })
+        {
+            query = query.Where(r => statuses.Contains(r.Status));
+        }
+        if (priority.HasValue)
+        {
+            query = query.Where(r => r.Priority == priority.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(requesterSearch))
+        {
+            query = query.Where(r => r.RequestedByUser!.FullName.ToLower().Contains(requesterSearch.ToLower()));
+        }
+
+        return query.OrderByDescending(r => r.CreatedAtUtc).ToListAsync(cancellationToken);
+    }
+
+    public async Task<PagedResult<Requisition>> SearchAsync(
+        Guid companyId, Guid? ownerUserId, string? scopeDepartment, bool scopeToPipeline,
+        string? freeText, string? requesterSearch, List<RequisitionStatus>? statuses, RequisitionPriority? priority, string? department,
+        Guid? categoryId, Guid? categoryItemId, DateTime? dateFrom, DateTime? dateTo, DateTime? needByFrom, DateTime? needByTo,
+        string sortBy, bool sortDescending, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        // ASP.NET Core's [FromQuery] model binding produces DateTimeKind.Unspecified for a plain
+        // "yyyy-MM-dd" query string value - Npgsql refuses to write that to a "timestamp with time
+        // zone" column ("only UTC is supported"), which crashed every date-range filter with a 500
+        // before this fix. Every date filter here is always intended as UTC (matches
+        // CreatedAtUtc/NeedByDate's own naming), so it's safe to force the Kind rather than reject it.
+        dateFrom = AsUtc(dateFrom);
+        dateTo = AsUtc(dateTo);
+        needByFrom = AsUtc(needByFrom);
+        needByTo = AsUtc(needByTo);
+
+        var query = _context.Requisitions
+            .Include(r => r.Items).ThenInclude(i => i.CategoryItem)
+            .Include(r => r.Category)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ApprovalProcess!).ThenInclude(p => p.StageInstances).ThenInclude(s => s.ApprovalWorkflowStage)
+            .Where(r => r.CompanyId == companyId);
+
+        // Data-scope: the same boundary GetAllForUserAsync/GetForDepartmentAsync/GetForProcurementAsync
+        // already enforce, generalized into one query. Exactly one of these three is set by the handler
+        // per role (or none, for SystemAdmin) - never combined.
+        if (ownerUserId.HasValue)
+        {
+            query = query.Where(r => r.RequestedByUserId == ownerUserId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(scopeDepartment))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == scopeDepartment);
+        }
+        else if (scopeToPipeline)
+        {
+            query = query.Where(r => RequisitionAccessHelper.ProcurementPipelineStatuses.Contains(r.Status));
+        }
+
+        if (!string.IsNullOrWhiteSpace(freeText))
+        {
+            query = query.Where(r =>
+                (r.RequisitionNumber != null && EF.Functions.ILike(r.RequisitionNumber, $"%{freeText}%")) ||
+                (r.RequestedByUser != null && EF.Functions.ILike(r.RequestedByUser.FullName, $"%{freeText}%")) ||
+                (r.Category != null && EF.Functions.ILike(r.Category.Name, $"%{freeText}%")) ||
+                r.Items.Any(i => EF.Functions.ILike(i.ItemName, $"%{freeText}%")));
+        }
+        // Separate from freeText - the task's own smart-filter list names Requester independently
+        // (combinable with Status/Department/etc without also matching on category or item names the
+        // way freeText's broader OR would).
+        if (!string.IsNullOrWhiteSpace(requesterSearch))
+        {
+            query = query.Where(r => r.RequestedByUser != null && EF.Functions.ILike(r.RequestedByUser.FullName, $"%{requesterSearch}%"));
+        }
+        if (statuses is { Count: > 0 })
+        {
+            query = query.Where(r => statuses.Contains(r.Status));
+        }
+        if (priority.HasValue)
+        {
+            query = query.Where(r => r.Priority == priority.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(department))
+        {
+            query = query.Where(r => r.RequestedByUser!.Department == department);
+        }
+        if (categoryId.HasValue)
+        {
+            query = query.Where(r => r.CategoryId == categoryId.Value);
+        }
+        if (categoryItemId.HasValue)
+        {
+            query = query.Where(r => r.Items.Any(i => i.CategoryItemId == categoryItemId.Value));
+        }
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(r => r.CreatedAtUtc >= dateFrom.Value);
+        }
+        if (dateTo.HasValue)
+        {
+            query = query.Where(r => r.CreatedAtUtc <= dateTo.Value);
+        }
+        if (needByFrom.HasValue)
+        {
+            query = query.Where(r => r.NeedByDate != null && r.NeedByDate >= needByFrom.Value);
+        }
+        if (needByTo.HasValue)
+        {
+            query = query.Where(r => r.NeedByDate != null && r.NeedByDate <= needByTo.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        query = sortBy switch
+        {
+            "RequisitionNumber" => sortDescending ? query.OrderByDescending(r => r.RequisitionNumber) : query.OrderBy(r => r.RequisitionNumber),
+            "NeedByDate" => sortDescending ? query.OrderByDescending(r => r.NeedByDate) : query.OrderBy(r => r.NeedByDate),
+            "Priority" => sortDescending ? query.OrderByDescending(r => r.Priority) : query.OrderBy(r => r.Priority),
+            "Status" => sortDescending ? query.OrderByDescending(r => r.Status) : query.OrderBy(r => r.Status),
+            _ => sortDescending ? query.OrderByDescending(r => r.CreatedAtUtc) : query.OrderBy(r => r.CreatedAtUtc),
+        };
+
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        return new PagedResult<Requisition>(items, totalCount, page, pageSize);
+    }
+
+    public void AddAttachment(Requisition requisition, RequisitionAttachment attachment)
+    {
+        attachment.RequisitionId = requisition.Id;
+        requisition.Attachments.Add(attachment);
+        _context.RequisitionAttachments.Add(attachment);
+    }
+
+    public void RemoveAttachment(Requisition requisition, RequisitionAttachment attachment)
+    {
+        requisition.Attachments.Remove(attachment);
+        _context.RequisitionAttachments.Remove(attachment);
+    }
+
     public void ReplaceFieldValues(Requisition requisition, List<RequisitionFieldValue> newValues)
     {
         _context.RequisitionFieldValues.RemoveRange(requisition.FieldValues);
@@ -66,4 +353,9 @@ public class RequisitionRepository : IRequisitionRepository
 
         _context.RequisitionFieldValues.AddRange(newValues);
     }
+
+    /// <summary>See SearchAsync's remarks - re-tags a query-string-bound DateTime (Kind=Unspecified) as
+    /// UTC without altering its numeric value, since these filters are always intended as UTC.</summary>
+    private static DateTime? AsUtc(DateTime? value) =>
+        value.HasValue && value.Value.Kind != DateTimeKind.Utc ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
 }
