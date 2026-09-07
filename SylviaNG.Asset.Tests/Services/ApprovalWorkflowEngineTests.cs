@@ -149,12 +149,13 @@ public class ApprovalWorkflowEngineTests
     }
 
     [Fact]
-    public async Task ResolveAndStartAsync_SelfSkippedCapturingStage_DoesNotAutoApproveCostConditionalNextStage()
+    public async Task ResolveAndStartAsync_SelfSkippedCapturingStage_StillEvaluatesCostConditionalNextStage()
     {
-        // Bug: a Line Manager submitting their own request was the sole approver for the (capturing)
-        // Stage 1, so it auto-skipped - but since no cost was ever entered, Stage 2's "Cost > 20000"
-        // condition compared against the requisition's untouched EstimatedCost (0) and excluded Stage 2
-        // too, reaching full approval with no human ever reviewing it. Stage 2 must stay in play instead.
+        // Requisition.EstimatedCost is always a real, deterministic value by resolution time - computed
+        // from the Admin's catalog prices when the requisition was created, independent of any stage's
+        // approval status. So a Line Manager submitting their own request (sole approver on Stage 1,
+        // auto-skipped) must NOT change whether Stage 2's Cost condition applies - it's evaluated against
+        // the real pre-known cost either way, keeping a human in the loop when the cost warrants it.
         var deptHead = Guid.NewGuid();
         var stage1 = NewStage(1, capturesCost: true);
         stage1.Approvers.Add(new WorkflowApprover { ApproverType = ApproverType.SpecificUser, ApproverUserId = _requestorId, IsRequired = true });
@@ -171,7 +172,7 @@ public class ApprovalWorkflowEngineTests
         _userRepository.Setup(r => r.GetByIdAsync(deptHead, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new User { Id = deptHead, FullName = "Dept Head", IsActive = true, CompanyId = _companyId });
 
-        var requisition = NewRequisition(); // EstimatedCost never set - stays 0
+        var requisition = NewRequisition(estimatedCost: 25000m); // computed at creation, above Stage 2's threshold
 
         await _engine.ResolveAndStartAsync(requisition, _requestorId, "Employee One", "Employee", CancellationToken.None);
 
@@ -407,7 +408,7 @@ public class ApprovalWorkflowEngineTests
 
         _workflowRepository.Setup(r => r.GetVersionByIdAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
 
-        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Approver", "LineManager", CancellationToken.None);
+        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Approver", "Manager", CancellationToken.None);
 
         requisition.Status.Should().Be(RequisitionStatus.Approved);
         process.CompletedAtUtc.Should().NotBeNull();
@@ -415,8 +416,13 @@ public class ApprovalWorkflowEngineTests
     }
 
     [Fact]
-    public async Task AdvanceAfterApprovalAsync_CapturesEstimatedCost_AppliesCapturedValue_ThenEvaluatesCostConditionOnNextStage()
+    public async Task AdvanceAfterApprovalAsync_CostAlreadyOnRequisitionFromCreation_EvaluatesCostConditionOnNextStage()
     {
+        // Feature 3 correction: cost is computed once, from the Admin's catalog price x quantity, when
+        // the requisition is created (RequisitionFieldValidation.ComputeEstimatedCost) - it's never
+        // typed by an approver during Approve, so it's already sitting on the requisition by the time
+        // any stage completes. This is that steady-state case: stage 1 finishes, stage 2's Cost
+        // condition reads the value that was already there.
         var stage1 = NewStage(1, capturesCost: true);
         var conditionalApprover = Guid.NewGuid();
         var stage2 = NewStage(2);
@@ -427,7 +433,7 @@ public class ApprovalWorkflowEngineTests
         version.Stages.Add(stage1);
         version.Stages.Add(stage2);
 
-        var requisition = NewRequisition(estimatedCost: 0);
+        var requisition = NewRequisition(estimatedCost: 25000m);
         requisition.Status = RequisitionStatus.UnderReview; // ResolveAndStart would already have set this before stage 1 could complete
         var process = new RequisitionApprovalProcess { RequisitionId = requisition.Id, ApprovalWorkflowVersionId = version.Id, Requisition = requisition };
         var completedApproval = new RequisitionApproval
@@ -437,22 +443,167 @@ public class ApprovalWorkflowEngineTests
             Status = RequisitionApprovalStatus.Approved,
             RequisitionApprovalProcess = process,
         };
-        completedApproval.Actions.Add(new RequisitionApprovalAction
-        {
-            ActionType = ApprovalActionType.Approve,
-            CapturedEstimatedCost = 25000m,
-        });
+        completedApproval.Actions.Add(new RequisitionApprovalAction { ActionType = ApprovalActionType.Approve });
+
+        process.StageInstances.Add(completedApproval);
 
         _workflowRepository.Setup(r => r.GetVersionByIdAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
         _userRepository.Setup(r => r.GetByIdAsync(conditionalApprover, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new User { Id = conditionalApprover, FullName = "Dept Head", IsActive = true, CompanyId = _companyId });
 
-        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Approver", "LineManager", CancellationToken.None);
+        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Approver", "Manager", CancellationToken.None);
 
-        // The captured cost (25000) is now on the requisition, pushing it into stage 2's >=20000 range,
-        // so stage 2 gets created (not skipped) rather than the requisition jumping straight to Approved.
+        // The pre-existing cost (25000) is in stage 2's >=20000 range, so stage 2 gets created (not
+        // skipped) rather than the requisition jumping straight to Approved.
         requisition.EstimatedCost.Should().Be(25000m);
         requisition.Status.Should().Be(RequisitionStatus.UnderReview);
         _requisitionApprovalRepository.Verify(r => r.AddApproval(It.Is<RequisitionApproval>(a => a.StageOrder == 2)), Times.Once);
+    }
+
+    [Fact]
+    public async Task AdvanceAfterApprovalAsync_MultiHopCostCondition_ExcludesStageBelowThreshold_EvenWhenCapturingStageInstanceIsNotLoaded()
+    {
+        // Regression for a real production bug: GetApprovalByIdAsync (the repository method that loads
+        // the just-completed approval) never eager-loads RequisitionApprovalProcess.StageInstances, so
+        // in production process.StageInstances only ever contains whichever approval row EF's own
+        // relationship fixup happened to attach - never the FULL stage history. A now-removed
+        // "costReliablyKnown" gate relied on scanning that under-populated collection for an earlier
+        // CapturesEstimatedCost stage, which worked by coincidence on the very first hop (stage 1 IS the
+        // row being evaluated) but silently broke on any later hop (e.g. stage 2 completing, evaluating
+        // stage 3 - stage 1's row was never loaded here at all), letting a cost-conditional stage 3
+        // through even when the requisition's real cost was below its MinCost. Cost conditions must be
+        // evaluated directly against Requisition.EstimatedCost, with no dependency on StageInstances.
+        var stage1 = NewStage(1, capturesCost: true);
+        var stage2 = NewStage(2);
+        stage2.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 20001m, MaxCost = 100000m });
+        var stage3 = NewStage(3);
+        stage3.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 100001m });
+
+        var version = new ApprovalWorkflowVersion { Id = Guid.NewGuid(), IsPublished = true, AppliesToAllCategories = true };
+        version.Stages.Add(stage1);
+        version.Stages.Add(stage2);
+        version.Stages.Add(stage3);
+
+        var requisition = NewRequisition(estimatedCost: 100000m); // exactly at stage 2's ceiling, below stage 3's floor
+        requisition.Status = RequisitionStatus.UnderReview;
+        var process = new RequisitionApprovalProcess { RequisitionId = requisition.Id, ApprovalWorkflowVersionId = version.Id, Requisition = requisition };
+
+        // Deliberately mirrors the production gap: only stage 2's own row is present on the process -
+        // stage 1's (the CapturesEstimatedCost stage) is NOT, since GetApprovalByIdAsync never loaded it.
+        var completedApproval = new RequisitionApproval
+        {
+            ApprovalWorkflowStage = stage2,
+            StageOrder = 2,
+            Status = RequisitionApprovalStatus.Approved,
+            RequisitionApprovalProcess = process,
+        };
+        process.StageInstances.Add(completedApproval);
+
+        _workflowRepository.Setup(r => r.GetVersionByIdAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
+
+        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Approver", "DepartmentHead", CancellationToken.None);
+
+        // Stage 3 (MinCost 100001) must be excluded - 100000 < 100001 - so the requisition reaches
+        // Approved instead of incorrectly waiting on an Executive Review stage.
+        requisition.Status.Should().Be(RequisitionStatus.Approved);
+        process.CompletedAtUtc.Should().NotBeNull();
+        _requisitionApprovalRepository.Verify(r => r.AddApproval(It.Is<RequisitionApproval>(a => a.StageOrder == 3)), Times.Never);
+    }
+
+    /// <summary>Regression coverage for the real bug: Department Head's (Director Review) Cost
+    /// condition used to be MinCost=20001/MaxCost=100000 - correct up to 100,000, but silently excluded
+    /// above it (100000 &gt; MaxCost), so a high-value requisition jumped straight from Manager to CEO,
+    /// skipping Department Head entirely. Corrected condition is open-ended: MinCost=20000.01, no
+    /// MaxCost, so Department Head stays in the chain no matter how high the cost goes - cumulative
+    /// escalation, not a price band. 20,000 exactly must NOT include it (Manager only); 20,000.01 and
+    /// any amount far above 100,000 both must.</summary>
+    [Theory]
+    [InlineData(20000, false)]
+    [InlineData(20000.01, true)]
+    [InlineData(500000, true)] // the actual reported bug case - must NOT be skipped at high cost
+    public async Task AdvanceAfterApprovalAsync_AfterManagerStage_DirectorReviewCondition_MatchesCorrectedThreshold(
+        double costDouble, bool expectDirectorReviewCreated)
+    {
+        var cost = (decimal)costDouble;
+        var deptHead = Guid.NewGuid();
+        var stage1 = NewStage(1, capturesCost: true);
+        var stage2 = NewStage(2, capturesCost: false);
+        stage2.Name = "Director Review";
+        stage2.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 20000.01m });
+        stage2.Approvers.Add(new WorkflowApprover { ApproverType = ApproverType.SpecificUser, ApproverUserId = deptHead, IsRequired = true });
+
+        var version = new ApprovalWorkflowVersion { Id = Guid.NewGuid(), IsPublished = true, AppliesToAllCategories = true };
+        version.Stages.Add(stage1);
+        version.Stages.Add(stage2);
+
+        var requisition = NewRequisition(estimatedCost: cost);
+        requisition.Status = RequisitionStatus.UnderReview;
+        var process = new RequisitionApprovalProcess { RequisitionId = requisition.Id, ApprovalWorkflowVersionId = version.Id, Requisition = requisition };
+        var completedApproval = new RequisitionApproval
+        {
+            ApprovalWorkflowStage = stage1,
+            StageOrder = 1,
+            Status = RequisitionApprovalStatus.Approved,
+            RequisitionApprovalProcess = process,
+        };
+        process.StageInstances.Add(completedApproval);
+
+        _workflowRepository.Setup(r => r.GetVersionByIdAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
+        _userRepository.Setup(r => r.GetByIdAsync(deptHead, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = deptHead, FullName = "Dept Head", IsActive = true, CompanyId = _companyId });
+
+        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Manager", "Manager", CancellationToken.None);
+
+        var expectedTimes = expectDirectorReviewCreated ? Times.Once() : Times.Never();
+        _requisitionApprovalRepository.Verify(r => r.AddApproval(It.Is<RequisitionApproval>(a => a.StageOrder == 2)), expectedTimes);
+        requisition.Status.Should().Be(expectDirectorReviewCreated ? RequisitionStatus.UnderReview : RequisitionStatus.Approved);
+    }
+
+    /// <summary>Same corrected-threshold coverage one hop further in: CEO (Executive Review) must stay
+    /// excluded at exactly 100,000 (Manager + Department Head only) and included from 100,000.01
+    /// upward.</summary>
+    [Theory]
+    [InlineData(100000, false)]
+    [InlineData(100000.01, true)]
+    public async Task AdvanceAfterApprovalAsync_AfterDirectorReviewStage_ExecutiveReviewCondition_MatchesCorrectedThreshold(
+        double costDouble, bool expectExecutiveReviewCreated)
+    {
+        var cost = (decimal)costDouble;
+        var ceo = Guid.NewGuid();
+        var stage1 = NewStage(1, capturesCost: true);
+        var stage2 = NewStage(2, capturesCost: false);
+        stage2.Name = "Director Review";
+        stage2.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 20000.01m });
+        var stage3 = NewStage(3, capturesCost: false);
+        stage3.Name = "Executive Review";
+        stage3.Conditions.Add(new ApprovalWorkflowStageCondition { ConditionType = ApprovalConditionType.Cost, MinCost = 100000.01m });
+        stage3.Approvers.Add(new WorkflowApprover { ApproverType = ApproverType.SpecificUser, ApproverUserId = ceo, IsRequired = true });
+
+        var version = new ApprovalWorkflowVersion { Id = Guid.NewGuid(), IsPublished = true, AppliesToAllCategories = true };
+        version.Stages.Add(stage1);
+        version.Stages.Add(stage2);
+        version.Stages.Add(stage3);
+
+        var requisition = NewRequisition(estimatedCost: cost);
+        requisition.Status = RequisitionStatus.UnderReview;
+        var process = new RequisitionApprovalProcess { RequisitionId = requisition.Id, ApprovalWorkflowVersionId = version.Id, Requisition = requisition };
+        var completedApproval = new RequisitionApproval
+        {
+            ApprovalWorkflowStage = stage2,
+            StageOrder = 2,
+            Status = RequisitionApprovalStatus.Approved,
+            RequisitionApprovalProcess = process,
+        };
+        process.StageInstances.Add(completedApproval);
+
+        _workflowRepository.Setup(r => r.GetVersionByIdAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
+        _userRepository.Setup(r => r.GetByIdAsync(ceo, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = ceo, FullName = "CEO", IsActive = true, CompanyId = _companyId });
+
+        await _engine.AdvanceAfterApprovalAsync(completedApproval, _requestorId, "Dept Head", "DepartmentHead", CancellationToken.None);
+
+        var expectedTimes = expectExecutiveReviewCreated ? Times.Once() : Times.Never();
+        _requisitionApprovalRepository.Verify(r => r.AddApproval(It.Is<RequisitionApproval>(a => a.StageOrder == 3)), expectedTimes);
+        requisition.Status.Should().Be(expectExecutiveReviewCreated ? RequisitionStatus.UnderReview : RequisitionStatus.Approved);
     }
 }

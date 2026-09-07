@@ -91,15 +91,27 @@ public class Requisition : AuditableEntity
         return entry;
     }
 
-    /// <summary>FR-RR-008/BR-RR-002/BR-RR-003: only legal while Submitted and no approver has acted yet -
-    /// enforced by RequisitionStatusRules, since every later status removes the Cancelled transition.
-    /// See Submit's remarks re: registering the returned entry explicitly.</summary>
+    /// <summary>FR-RR-008/BR-RR-002/BR-RR-003: true while Submitted, or while UnderReview but no approver
+    /// has yet acted on any stage of the resolved workflow. UnderReview alone does NOT mean an approver
+    /// has acted - ApprovalWorkflowEngine.ResolveAndStartAsync moves a requisition Submitted ->
+    /// UnderReview automatically, in the same request as submission, before any human approver has even
+    /// seen it, so treating "UnderReview" as "an approver acted" (the previous, status-only rule) made
+    /// cancellation effectively unreachable for any category with a resolvable workflow. Only accurate
+    /// when ApprovalProcess.StageInstances (and each stage's Actions) have been eagerly loaded - true for
+    /// GetByIdAsync and GetAllForUserAsync; a query that doesn't load ApprovalProcess should not read this.</summary>
+    public bool CanCancel =>
+        Status == RequisitionStatus.Submitted ||
+        (Status == RequisitionStatus.UnderReview &&
+         (ApprovalProcess is null || ApprovalProcess.StageInstances.All(s => s.Actions.Count == 0)));
+
+    /// <summary>FR-RR-008/BR-RR-002/BR-RR-003: see CanCancel for exactly what "before any approver has
+    /// acted" means in practice. See Submit's remarks re: registering the returned entry explicitly.</summary>
     public RequisitionStatusHistory Cancel(Guid actorUserId, string actorName, string? actorRole, string? comment)
     {
-        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Cancelled))
+        if (!RequisitionStatusRules.CanTransition(Status, RequisitionStatus.Cancelled) || !CanCancel)
         {
             throw new InvalidOperationException(
-                $"A requisition can only be cancelled while Submitted and before any approver action (current status: {Status}).");
+                $"A requisition can only be cancelled while Submitted, or while under review before any approver has acted (current status: {Status}).");
         }
 
         var from = Status;

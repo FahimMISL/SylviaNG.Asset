@@ -62,14 +62,14 @@ public class AuditLogEntityAnchoringTests
 
         currentUser.Setup(c => c.UserId).Returns(approverId);
         currentUser.Setup(c => c.FullName).Returns("Manny Manager");
-        currentUser.Setup(c => c.Role).Returns(UserRole.LineManager);
+        currentUser.Setup(c => c.Role).Returns(UserRole.Manager);
 
         var engine = new ApprovalWorkflowEngine(workflowRepository.Object, requisitionApprovalRepository.Object, requisitionRepository.Object, userRepository.Object);
         var handler = new ApproveApprovalCommandHandler(
             requisitionApprovalRepository.Object, delegationRepository.Object, currentUser.Object, auditLogger.Object, unitOfWork.Object, engine,
             notificationService.Object);
 
-        await handler.Handle(new ApproveApprovalCommand(approval.Id, "Looks good.", null), CancellationToken.None);
+        await handler.Handle(new ApproveApprovalCommand(approval.Id, "Looks good."), CancellationToken.None);
 
         auditLogger.Verify(a => a.LogAsync(
             "ApprovalApproved", nameof(Requisition), requisition.Id, It.Is<string>(d => d.Contains("Looks good.")), It.IsAny<CancellationToken>()),
@@ -120,7 +120,7 @@ public class AuditLogEntityAnchoringTests
 
         currentUser.Setup(c => c.UserId).Returns(approverId);
         currentUser.Setup(c => c.FullName).Returns("Manny Manager");
-        currentUser.Setup(c => c.Role).Returns(UserRole.LineManager);
+        currentUser.Setup(c => c.Role).Returns(UserRole.Manager);
 
         var handler = new RejectApprovalCommandHandler(
             requisitionApprovalRepository.Object, requisitionRepository.Object, delegationRepository.Object,

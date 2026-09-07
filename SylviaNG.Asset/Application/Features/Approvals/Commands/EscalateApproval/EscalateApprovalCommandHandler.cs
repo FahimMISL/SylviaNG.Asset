@@ -31,6 +31,8 @@ public class EscalateApprovalCommandHandler : IRequestHandler<EscalateApprovalCo
 
     public async Task Handle(EscalateApprovalCommand request, CancellationToken cancellationToken)
     {
+        CommentValidation.EnsureValid(request.Comment);
+
         var userId = _currentUser.UserId ?? throw new ForbiddenException();
         var actorName = _currentUser.FullName ?? "Unknown";
         var actorRole = _currentUser.Role?.ToString();

@@ -1,4 +1,5 @@
 using FluentValidation;
+using RMS.Application.Features.Approvals.Services;
 
 namespace RMS.Application.Features.Approvals.Commands.SendBackApproval;
 
@@ -7,5 +8,7 @@ public class SendBackApprovalCommandValidator : AbstractValidator<SendBackApprov
     public SendBackApprovalCommandValidator()
     {
         RuleFor(c => c.ApprovalId).NotEmpty();
+        RuleFor(c => c.Comment).NotEmpty().MinimumLength(CommentValidation.MinimumLength)
+            .WithMessage($"Comment must be at least {CommentValidation.MinimumLength} characters.");
     }
 }

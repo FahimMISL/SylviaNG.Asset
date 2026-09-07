@@ -11,6 +11,15 @@ public record RequisitionItemDto(Guid Id, string ItemName, int Quantity, Guid? C
     public static RequisitionItemDto FromEntity(RequisitionItem i) => new(i.Id, i.ItemName, i.Quantity, i.CategoryItemId);
 }
 
+/// <summary>Shared "Item" column text for every requisition list row (My/Department Requisitions,
+/// Search, Pending Approvals) - e.g. "Laptop x2, Monitor x1". Kept in one place so the four list
+/// DTOs can't drift on formatting.</summary>
+public static class RequisitionItemsSummary
+{
+    public static string Describe(IEnumerable<RequisitionItem> items) =>
+        string.Join(", ", items.Select(i => $"{i.ItemName} x{i.Quantity}"));
+}
+
 public record RequisitionFieldValueDto(Guid FieldDefinitionId, string Label, string? Value)
 {
     public static RequisitionFieldValueDto FromEntity(RequisitionFieldValue v) => new(
@@ -84,7 +93,12 @@ public record RequisitionDto(
     /// the requestor already passes GetRequisitionByIdQueryHandler's owner check) - its
     /// CurrentUserCanProcess flag is the one authoritative "show Start Processing/Record
     /// Fulfillment/Close buttons" signal, same role as ApprovalProcessDto.CurrentUserCanAct.</summary>
-    ProcurementDto? Procurement)
+    ProcurementDto? Procurement,
+    /// <summary>FR-RR-008: the one authoritative "show the Cancel button" signal - mirrors
+    /// Requisition.CanCancel exactly, so the frontend never has to re-derive "before any approver has
+    /// acted" from status alone (see CanCancel's remarks for why a plain Status == Submitted check is
+    /// wrong).</summary>
+    bool CanCancel)
 {
     private static readonly HashSet<RequisitionStatus> ProcurementPipelineStatuses =
     [
@@ -121,7 +135,8 @@ public record RequisitionDto(
         // set) is still passed as sibling context so IsLatestVersion is computed correctly.
         r.Attachments.Where(a => !a.IsDeleted).Select(a => RequisitionAttachmentDto.FromEntity(a, r.Attachments)).ToList(),
         r.ApprovalProcess is null ? null : ApprovalProcessDto.FromEntity(r.ApprovalProcess, DateTime.UtcNow, currentUserCanAct),
-        ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null);
+        ProcurementPipelineStatuses.Contains(r.Status) ? ProcurementDto.FromEntity(r, currentUserCanProcess) : null,
+        r.CanCancel);
 }
 
 public record RequisitionSummaryDto(
@@ -133,12 +148,21 @@ public record RequisitionSummaryDto(
     DateTime? NeedByDate,
     decimal EstimatedCost,
     DateTime CreatedAtUtc,
+    /// <summary>Null until the requisition is actually submitted (still a Draft) - reuses the same
+    /// Requisition.SubmittedAtUtc the detail page's own "Submitted" field already reads, not a new field.</summary>
+    DateTime? SubmittedAtUtc,
     int ItemCount,
-    string? RequesterName)
+    string ItemsSummary,
+    string? RequesterName,
+    /// <summary>FR-RR-008: mirrors Requisition.CanCancel - only accurate for a caller that eagerly
+    /// loaded ApprovalProcess.StageInstances.Actions (GetAllForUserAsync does; GetForDepartmentAsync and
+    /// the manpower summary query don't, and don't need to since neither shows a Cancel button).</summary>
+    bool CanCancel)
 {
     public static RequisitionSummaryDto FromEntity(Requisition r) => new(
         r.Id, r.RequisitionNumber, r.Category?.Name ?? string.Empty, r.Status.ToString(), r.Priority.ToString(),
-        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.Items.Count, r.RequestedByUser?.FullName);
+        r.NeedByDate, r.EstimatedCost, r.CreatedAtUtc, r.SubmittedAtUtc, r.Items.Count, RequisitionItemsSummary.Describe(r.Items), r.RequestedByUser?.FullName,
+        r.CanCancel);
 }
 
 /// <summary>Feature 11: one search result row. ApprovalStatus/ProcurementStatus reuse
